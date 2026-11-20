@@ -54,3 +54,4 @@
 # Prepared resources, when a local build bundles them (Mojang-derived: never committed).
 /ios/Resources/horizon-resources/
 /dist/
+/out/

@@ -4,13 +4,17 @@ A fork of [Horizon](https://github.com/horizon-rust/horizon) — Minecraft: Java
 written in Rust, on wgpu — that runs on iPad and iPhone. Everything the desktop game does, the
 app does in its own process: no launcher, no Java, no child process.
 
+**[Download: Horizon-0.1.0-unsigned.ipa](https://github.com/lan741/horizon-ios/releases/latest)**
+(arm64, iPadOS/iOS 17+, Metal, ~44 MB, unsigned — sign it first)
+
 - **`crates/horizon-ios/`** — the static library UIKit's `main.m` calls
-  (`horizon_ios_run`). It builds the argument vector a launcher would have built, then starts
-  the engine exactly as a desktop run does.
+  (`horizon_ios_run`). It builds the argument vector a launcher would have built, does the
+  engine installs `horizon-mod-host` would have done, then starts the engine exactly as a
+  desktop run does.
 - **`ios/`** — the app around it: `main.m`, `Info.plist`, and `project.yml` for
   [XcodeGen](https://github.com/yonaskolb/XcodeGen).
 - **`.github/workflows/ios-ipa.yml`** — the cloud build: compiles the engine for
-  `aarch64-apple-ios` on `macos-15`, wraps it in the app, and publishes an IPA.
+  `aarch64-apple-ios` on `macos-15`, wraps it in the app, and publishes an IPA (~25 minutes).
 - **[docs/ios.md](docs/ios.md)** — the folders the app uses, prepared resources, why the build
   is Metal-only, what the first build leaves for later, and how to install the IPA.
 
