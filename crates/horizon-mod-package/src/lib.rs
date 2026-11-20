@@ -5,9 +5,12 @@ pub mod content;
 pub mod dependencies;
 pub mod enabled;
 pub mod game_identity;
+// iOS is Unix, so these compile there, and `runtime_leases` names `holder` whatever the
+// target: the app never reaches either, because `entry::prepare_from` leaves the holder out
+// (docs/ios.md), but the module has to exist for the lease types to build.
 #[cfg(all(
     feature = "runtime-process",
-    any(target_os = "linux", target_os = "macos", windows)
+    any(target_os = "linux", target_os = "macos", target_os = "ios", windows)
 ))]
 pub mod holder;
 pub mod icon;
@@ -20,7 +23,7 @@ pub mod junction;
 pub mod layouts;
 #[cfg(all(
     feature = "runtime-process",
-    any(target_os = "linux", target_os = "macos", windows)
+    any(target_os = "linux", target_os = "macos", target_os = "ios", windows)
 ))]
 pub mod local_control;
 #[cfg(feature = "runtime-process")]
