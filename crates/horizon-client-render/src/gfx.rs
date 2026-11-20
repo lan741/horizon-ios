@@ -6777,7 +6777,7 @@ impl Renderer {
                 );
                 horizon_shaders::GeometryInputs {
                     inputs,
-                    // Flat terrain inputs pull their own vertex (`PULL_FLAT`, `gl_VertexIndex` â†?`hz_vertex_index`).
+                    // Flat terrain inputs pull their own vertex (`PULL_FLAT`, `gl_VertexIndex` â†’ `hz_vertex_index`).
                     pull: String::new(),
                     index: "hz_indices[@]".to_owned(),
                 }
@@ -7424,7 +7424,7 @@ impl Renderer {
                 // used as configured (wgpu reports a configuration raced with
                 // a submission this way). Give it a fresh configuration like
                 // an Outdated one, and once that has not helped, reattach the
-                // window like a Lost one â€?a fullscreen loading screen then
+                // window like a Lost one â€” a fullscreen loading screen then
                 // skips frames instead of failing every one of them.
                 if self.acquire_validation_failures == 0 {
                     self.configure_surface();
@@ -10658,7 +10658,7 @@ impl Renderer {
                 pass.set_index_buffer(self.indices.slice(..), wgpu::IndexFormat::Uint32);
             }
             // LevelRenderer.executeTranslucentAfterTerrain: vanilla's
-            // translucent particle layer draws after translucent terrain â€?
+            // translucent particle layer draws after translucent terrain â€”
             // the quads write depth, so before it they would hide the glass
             // or water behind them.
             if translucent_particle_quads > 0 && !oit_on {
@@ -13522,6 +13522,8 @@ impl DisplayReading {
         })
     }
     fn os(info: &wgpu::DisplayHdrInfo) -> Self {
+        // iOS reports the same `headroom` as macOS: Metal's display has potential and
+        // current EDR, so the macOS reading serves both (docs/ios.md).
         #[cfg(any(target_os = "macos", target_os = "ios"))]
         let hdr = macos_hdr(info);
         #[cfg(not(any(target_os = "macos", target_os = "ios")))]

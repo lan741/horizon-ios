@@ -89,6 +89,24 @@ Without them the game opens its own "no resources" screen and names the folder i
 - **The narrator is unavailable**: `horizon-narrator` has speech arms for Windows, macOS and
   Linux only, so the narrator option reports unavailable.
 
+## Playing it on an iPad Pro
+
+The first build reads a keyboard, a mouse or trackpad, and controllers — not a finger.
+On iPadOS that is enough to play: an iPad Pro 2025 with a Magic Keyboard (or any Bluetooth
+keyboard) plus a trackpad or a Bluetooth mouse sends exactly the events the desktop build
+reads, so WASD, mouse look, the hotbar keys and the click bindings all work; a paired Xbox or
+PlayStation controller also reaches the game through `GameController.framework` → winit's
+gamepad events. Touch controls are the first item under "Not in the first build".
+
+Settings worth knowing on an iPad Pro (2025, M5):
+
+| Setting | Where | Why |
+|---|---|---|
+| render distance | options → chunk distance | 12 is the desktop default; a 120 Hz ProMotion display keeps its frame rate further down, and 8–16 is the useful range on 12–16 GB |
+| vsync | options → graphics | on by default: ProMotion paces at 120 Hz, off allows the frame limiter's own pacing |
+| chunk fade-in | options → graphics | the fade is per-chunk work; off shortens a jump's stutter |
+| `--render-distance` | `main.m`'s argument vector, if you fork it | the same setting before the first frame |
+
 ## Not in the first build
 
 These are the follow-ups, in the order they would be worth doing:
