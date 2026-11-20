@@ -1,0 +1,276 @@
+name: iOS IPA
+
+# Compiles Horizon's Rust engine for aarch64-apple-ios as a static library, wraps it in the
+# Xcode app under ios/, and publishes an IPA. See docs/ios.md.
+#
+# The default run produces an unsigned IPA: Sideloadly, ESign, AltStore or a paid
+# certificate then signs it for the device (iOS 17+ has no TrollStore, so a signature is
+# always needed to launch). Signing inside CI needs the three secrets below.
+on:
+  workflow_dispatch:
+    inputs:
+      bundle_id:
+        description: "Bundle identifier (match your certificate or provisioning profile)"
+        required: false
+        default: "dev.horizon.ios"
+      version:
+        description: "CFBundleShortVersionString"
+        required: false
+        default: "0.1.0"
+      sign:
+        description: "Sign in CI (needs BUILD_CERTIFICATE_BASE64, P12_PASSWORD, PROVISIONING_PROFILE_BASE64, APPLE_TEAM_ID)"
+        type: boolean
+        default: false
+      bundle_resources:
+        description: "Bundle .local/horizon-client/26.3 prepared resources into the app (needs RESOURCES_ARCHIVE_URL or the folder in the repo)"
+        type: boolean
+        default: false
+      resources_archive_url:
+        description: "URL of a tar.gz/zip of prepared resources (Mojang-derived: keep it out of the repo)"
+        required: false
+        default: ""
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "ios/**"
+      - "packaging/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/ios-ipa.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ios-ipa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    name: macOS build → IPA
+    runs-on: macos-15
+    # The engine is ~500k lines of Rust; a cold release build on a runner is the long pole.
+    timeout-minutes: 240
+    env:
+      BUNDLE_ID: ${{ github.event.inputs.bundle_id || 'dev.horizon.ios' }}
+      APP_VERSION: ${{ github.event.inputs.version || '0.1.0' }}
+      CARGO_TERM_COLOR: always
+      RUST_BACKTRACE: 1
+      CERT_B64: ${{ secrets.BUILD_CERTIFICATE_BASE64 }}
+      CERT_PASSWORD: ${{ secrets.P12_PASSWORD }}
+      PROFILE_B64: ${{ secrets.PROVISIONING_PROFILE_BASE64 }}
+      TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          set -x
+          sw_vers
+          xcodebuild -version
+          uname -m
+          rustup --version || true
+
+      - name: Rust target aarch64-apple-ios
+        run: |
+          rustup target add aarch64-apple-ios
+          rustc -Vv
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          # The target triple is part of the key, so iOS artifacts never mix with a desktop run.
+          key: ios-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: xcodegen
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
+      - name: Check the iOS entry compiles
+        run: |
+          set -o pipefail
+          # `cargo check` for the whole iOS graph first: it fails in minutes, not after an
+          # hour of codegen, if a crate in the graph cannot target iOS.
+          cargo check -p horizon-ios --target aarch64-apple-ios 2>&1 | tail -n 120
+
+      - name: Build the static library
+        run: |
+          set -o pipefail
+          cargo build -p horizon-ios --release --target aarch64-apple-ios 2>&1 | tail -n 120
+          ls -l target/aarch64-apple-ios/release/libhorizon_ios.a
+
+      - name: Optional prepared resources
+        if: ${{ github.event.inputs.bundle_resources == 'true' }}
+        env:
+          RESOURCES_URL: ${{ github.event.inputs.resources_archive_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p ios/Resources
+          OUT="ios/Resources/horizon-resources"
+          if [ -d .local/horizon-client/26.3 ]; then
+            cp -R .local/horizon-client/26.3 "$OUT"
+          elif [ -n "${RESOURCES_URL}" ]; then
+            curl -fL --retry 3 -o /tmp/resources.tar.gz "$RESOURCES_URL"
+            mkdir -p /tmp/resources
+            tar -xzf /tmp/resources.tar.gz -C /tmp/resources
+            SRC="$(dirname "$(find /tmp/resources -name horizon-resources.json -print -quit)")"
+            test -n "$SRC" || { echo "no horizon-resources.json in the archive"; exit 1; }
+            cp -R "$SRC" "$OUT"
+          else
+            echo "::error::bundle_resources was set but neither .local/ nor a URL is available"
+            exit 1
+          fi
+          test -f "$OUT/horizon-resources.json"
+          du -sh "$OUT"
+
+      - name: Generate the Xcode project
+        run: |
+          set -euo pipefail
+          mkdir -p ios/lib
+          cp -f target/aarch64-apple-ios/release/libhorizon_ios.a ios/lib/libhorizon_ios.a
+          (cd ios && xcodegen generate --spec project.yml)
+          ls -la ios ios/lib
+
+      - name: Signing material (optional)
+        id: sign
+        if: ${{ github.event.inputs.sign == 'true' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${CERT_B64}" ] || [ -z "${PROFILE_B64}" ]; then
+            echo "::error::sign was requested but the certificate secrets are absent"
+            exit 1
+          fi
+          KEYCHAIN="$RUNNER_TEMP/build.keychain-db"
+          KEYCHAIN_PASS="$(uuidgen)"
+          python3 -c "import base64,sys;open(sys.argv[2],'wb').write(base64.b64decode(sys.argv[1]))" "$CERT_B64" "$RUNNER_TEMP/cert.p12"
+          python3 -c "import base64,sys;open(sys.argv[2],'wb').write(base64.b64decode(sys.argv[1]))" "$PROFILE_B64" "$RUNNER_TEMP/profile.mobileprovision"
+          security create-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASS" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASS" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          mkdir -p "$HOME/Library/MobileDevice/Provisioning Profiles"
+          cp "$RUNNER_TEMP/profile.mobileprovision" "$HOME/Library/MobileDevice/Provisioning Profiles/"
+          security cms -D -i "$RUNNER_TEMP/profile.mobileprovision" > "$RUNNER_TEMP/profile.plist"
+          echo "PROFILE_NAME=$(/usr/libexec/PlistBuddy -c 'Print :Name' "$RUNNER_TEMP/profile.plist")" >> "$GITHUB_ENV"
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Export options (signed)
+        if: steps.sign.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          PROFILE_UUID="$(/usr/libexec/PlistBuddy -c 'Print :UUID' "$RUNNER_TEMP/profile.plist")"
+          cat > ios/ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>development</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>signingCertificate</key><string>Apple Development</string>
+            <key>provisioningProfiles</key>
+            <dict><key>${BUNDLE_ID}</key><string>${PROFILE_UUID}</string></dict>
+            <key>stripSwiftSymbols</key><true/>
+            <key>compileBitcode</key><false/>
+          </dict>
+          </plist>
+          EOF
+          plutil -lint ios/ExportOptions.plist
+
+      - name: Archive and export a signed IPA
+        if: steps.sign.outputs.enabled == 'true'
+        working-directory: ios
+        env:
+          PROFILE_NAME: ${{ env.PROFILE_NAME }}
+        run: |
+          set -o pipefail
+          xcodebuild -project Horizon.xcodeproj -scheme Horizon -configuration Release -sdk iphoneos \
+            -archivePath build/Horizon.xcarchive archive \
+            CODE_SIGNING_ALLOWED=YES CODE_SIGNING_REQUIRED=YES \
+            CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM="$TEAM_ID" \
+            PROVISIONING_PROFILE_SPECIFIER="$PROFILE_NAME" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" MARKETING_VERSION="$APP_VERSION" \
+            | tee archive.log | tail -n 120
+          xcodebuild -exportArchive -archivePath build/Horizon.xcarchive -exportPath build/export \
+            -exportOptionsPlist ExportOptions.plist | tee export.log | tail -n 80
+          cp build/export/*.ipa "Horizon-${APP_VERSION}-signed.ipa"
+          shasum -a 256 "Horizon-${APP_VERSION}-signed.ipa"
+
+      - name: Build the unsigned IPA
+        if: steps.sign.outputs.enabled != 'true'
+        working-directory: ios
+        run: |
+          set -o pipefail
+          xcodebuild -project Horizon.xcodeproj -scheme Horizon -configuration Release -sdk iphoneos \
+            -derivedDataPath build \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
+            EXPANDED_CODE_SIGN_IDENTITY="" \
+            PRODUCT_BUNDLE_IDENTIFIER="$BUNDLE_ID" MARKETING_VERSION="$APP_VERSION" \
+            | tee build.log | tail -n 120
+          APP_PATH="build/Build/Products/Release-iphoneos/Horizon.app"
+          test -d "$APP_PATH" || { echo "::error::no $APP_PATH"; exit 1; }
+          mkdir -p Payload
+          cp -R "$APP_PATH" Payload/
+          zip -qry "Horizon-${APP_VERSION}-unsigned.ipa" Payload
+          ls -lh ./*.ipa
+          shasum -a 256 ./*.ipa
+          # A package this size is a bug in the build, not a feature of the game.
+          du -sh "$APP_PATH"
+
+      - name: Lipo the archive (sanity)
+        continue-on-error: true
+        run: |
+          set -euxo pipefail
+          lipo -info ios/lib/libhorizon_ios.a | head -n 5
+          xcrun vtool -show-build "$RUNNER_TEMP"/x 2>/dev/null || true
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "## Horizon iOS build"
+            echo ""
+            echo "| item | value |"
+            echo "| --- | --- |"
+            echo "| bundle id | \`${BUNDLE_ID}\` |"
+            echo "| version | ${APP_VERSION} (build ${GITHUB_RUN_NUMBER}) |"
+            echo "| signed | ${{ steps.sign.outputs.enabled == 'true' && 'yes' || 'no' }} |"
+            echo "| resources bundled | ${{ github.event.inputs.bundle_resources == 'true' && 'yes' || 'no' }} |"
+            echo "| runner | $(uname -m) / $(xcodebuild -version | head -n1) |"
+            echo ""
+            echo "### Installing"
+            echo "1. Unsigned IPA: sign it with Sideloadly, AltStore, ESign or a paid certificate, then install."
+            echo "2. Prepared resources (\`horizon-resources.json\` and its folders) go to the app's"
+            echo "   Documents folder, or were bundled in this build."
+            echo "3. iOS 17+ has no TrollStore; a signature is always required."
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the IPA
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Horizon-IPA-${{ github.run_number }}
+          path: |
+            ios/*.ipa
+            ios/*.log
+            ios/ExportOptions.plist
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Release (tagged builds)
+        if: startsWith(github.ref, 'refs/tags/ios-')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ios/*.ipa
+          name: Horizon iOS ${{ env.APP_VERSION }}
+          body: |
+            Horizon for iOS, built from ${{ github.sha }}.
+
+            Unsigned: sign it before installing (Sideloadly, AltStore, ESign, or a certificate).
+            Prepared resources are not included unless the run bundled them; see docs/ios.md.

@@ -1,0 +1,90 @@
+name: Horizon
+# The Xcode project CI generates (and a Mac regenerates) around the Rust static library.
+# `scripts/build-ios.sh` does the same steps by hand.
+options:
+  bundleIdPrefix: dev.horizon
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+  groupSortPosition: top
+
+settings:
+  base:
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    IPHONEOS_DEPLOYMENT_TARGET: "17.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_BITCODE: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    CLANG_ENABLE_MODULES: YES
+    SWIFT_VERSION: "5.0"
+    # An unsigned IPA: the sideloading tool signs the archive, so the build signs nothing
+    # and needs no team. `scripts/build-ios.sh signed` archives with a real identity.
+    CODE_SIGNING_ALLOWED: NO
+    CODE_SIGNING_REQUIRED: NO
+    CODE_SIGN_IDENTITY: ""
+    # The static library Rust produces, forced in whole: its Objective-C and C entry points
+    # are reached from `main.m` and winit's backend, not by any header the linker sees.
+    OTHER_LDFLAGS:
+      - "$(inherited)"
+      - "-force_load"
+      - "$(SRCROOT)/lib/libhorizon_ios.a"
+      - "-framework"
+      - "UIKit"
+      - "-framework"
+      - "Foundation"
+      - "-framework"
+      - "QuartzCore"
+      - "-framework"
+      - "Metal"
+      - "-framework"
+      - "CoreGraphics"
+      - "-framework"
+      - "CoreFoundation"
+      - "-framework"
+      - "CoreVideo"
+      - "-framework"
+      - "CoreText"
+      - "-framework"
+      - "CoreServices"
+      - "-framework"
+      - "Security"
+      - "-framework"
+      - "SystemConfiguration"
+      - "-framework"
+      - "IOKit"
+      - "-framework"
+      - "AudioToolbox"
+      - "-framework"
+      - "AVFoundation"
+      - "-framework"
+      - "GameController"
+      - "-framework"
+      - "MetalKit"
+      - "-lz"
+      - "-lc++"
+
+targets:
+  Horizon:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+        excludes:
+          - "Info.plist"
+      # Present only in a build that bundles the player's prepared resources: CI copies them
+      # to Resources/horizon-resources, the app finds them with `pathForResource` (docs/ios.md).
+      - path: Resources
+        buildPhase: resources
+    settings:
+      base:
+        INFOPLIST_FILE: Sources/Info.plist
+        PRODUCT_BUNDLE_IDENTIFIER: dev.horizon.ios
+        PRODUCT_NAME: Horizon
+        ASSETCATALOG_COMPILER_APPICON_NAME: ""
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks"
+    dependencies:
+      - sdk: Metal.framework
+      - sdk: QuartzCore.framework
+      - sdk: UIKit.framework
