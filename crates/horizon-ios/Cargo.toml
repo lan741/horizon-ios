@@ -14,9 +14,14 @@ crate-type = ["staticlib"]
 [dependencies]
 horizon-client = { path = "../horizon-client", default-features = false }
 horizon-mod-package = { path = "../horizon-mod-package", default-features = false, features = ["index"] }
-# `PackageInfo`, the type `entry::CodeRuntime` hands a code runtime; the crate's lib is
-# named `mod_vocab`.
-mod_vocab = { package = "horizon-mod-vocab", path = "../horizon-mod-vocab", default-features = false }
+# What `horizon-mod-host::main_with` installs before the engine starts, without its code
+# loading: the slot provider, the mod instrumentation, the platform half and the render
+# points (docs/ios.md).
+horizon-engine-slots = { path = "../horizon-engine-slots" }
+mod_points = { package = "horizon-mod-points", path = "../horizon-mod-points" }
+mod_render = { package = "horizon-mod-render", path = "../horizon-mod-render" }
+# The API and the instrumentation `main_with` installs; the crate's lib is `mod_api`.
+mod_api = { package = "horizon-mod-api", path = "../horizon-mod-api" }
 log = "0.4"
 
 [lints]
