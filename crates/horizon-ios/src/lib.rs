@@ -16,6 +16,8 @@
 use std::ffi::{CStr, OsString, c_char, c_int};
 use std::path::PathBuf;
 
+mod diag;
+
 use horizon_mod_package::runtime::Runtime;
 
 /// `rustc` for the crash report and `horizon-ctl status`, as the desktop host reports it.
@@ -52,6 +54,10 @@ pub struct Paths {
 #[allow(unsafe_code, reason = "the C entry point and the host's path pointers")]
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn horizon_ios_run(paths: *const Paths) -> c_int {
+    diag::init();
+    diag::install_panic_hook();
+    diag::install_signal_handlers();
+    diag::step("library entered");
     // SAFETY: the caller guarantees `paths` is a live `Paths` for this call.
     let paths = unsafe { paths.as_ref() };
     let documents = paths.and_then(|p| path(p.documents)).unwrap_or_else(home_fallback);
@@ -72,8 +78,10 @@ fn run(
     resources: &std::path::Path,
 ) -> Status {
     let home = support.join("horizon");
+    diag::step("creating the home folder");
     if let Err(error) = std::fs::create_dir_all(&home) {
         eprintln!("Horizon: cannot create {}: {error}", home.display());
+        diag::step("home folder failed");
         return Status::Failed;
     }
     let args: Vec<OsString> = vec![
@@ -85,8 +93,11 @@ fn run(
         resources.as_os_str().to_owned(),
     ];
     // A bad command line ends the process inside `prepare_from`, as on a desktop.
+    diag::step("validating the launch options");
     let startup = horizon_client::entry::prepare_from(args, Some(documents));
+    diag::step("installing the engine");
     install();
+    diag::step("starting the engine");
     horizon_client::entry::start(
         // No compiled-in native mods: the app has no `horizon-mods` folder to load them
         // from, and `Runtime::load` would refuse the missing packages (docs/ios.md).
@@ -99,6 +110,7 @@ fn run(
         },
         startup,
     );
+    diag::step("engine returned");
     Status::Ok
 }
 
@@ -106,12 +118,15 @@ fn run(
 /// provider, the instrumentation, the platform half of the slots and the render points.
 /// Each installed once, so a second call would be the host's own mistake.
 fn install() {
+    diag::step("slot provider");
     horizon_engine_slots::install_seal(mod_points::__private::seal)
         .expect("engine seal provider must be installed once before startup");
+    diag::step("mod instrumentation");
     if let Err(error) = mod_api::__private::initialize() {
         eprintln!("Horizon: refusing startup because mod instrumentation is unavailable: {error}");
         std::process::exit(1);
     }
+    diag::step("platform slots");
     if let Err(error) = horizon_engine_slots::install_platform(horizon_engine_slots::Platform {
         install_packages: mod_api::__private::install_packages,
         install_registration_data: mod_api::__private::install_registration_data,
@@ -125,7 +140,9 @@ fn install() {
         eprintln!("Horizon: {error}");
         std::process::exit(1);
     }
+    diag::step("render points");
     mod_render::render::install();
+    diag::step("engine installed");
 }
 
 fn no_code_initialize(_: &[mod_api::PackageInfo]) {}

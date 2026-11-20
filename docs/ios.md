@@ -107,6 +107,35 @@ Settings worth knowing on an iPad Pro (2025, M5):
 | chunk fade-in | options → graphics | the fade is per-chunk work; off shortens a jump's stutter |
 | `--render-distance` | `main.m`'s argument vector, if you fork it | the same setting before the first frame |
 
+## If it quits at launch
+
+The app keeps a launch log at **`Documents/horizon-launch.log`** (the Files app reaches it:
+the app shares its documents). It opens before any Rust runs and records `main entered`, the
+folders UIKit handed over, and then one line per startup step. A panic adds `PANIC at
+<file>:<line>: <message>` with a backtrace; a signal adds `SIG <n> addr <hex>`, which is what a
+bad pointer or a stack overflow looks like.
+
+Read it top to bottom, in this order:
+
+| Last line | What it means |
+|---|---|
+| nothing at all | the app did not reach `main`: a signing, architecture or entitlement problem, not a game bug |
+| `main entered` only | dyld or a framework failed while loading `Horizon` |
+| `step: library entered` then nothing | the entry crashed before validating options |
+| `step: validating the launch options` then nothing | the command line, the game folder or the home folder was refused (paths are in the log's first lines) |
+| `step: installing the engine` then nothing | the slot provider or the instrumentation refused: check the `Horizon:` line above it |
+| `step: starting the engine`, no `PANIC`, no `SIG` | the engine returned without a window: usually a re-signer that strips `UILaunchScreen`, or a Metal-less device |
+| `PANIC at …` | a Rust panic; the file and line name the place |
+| `SIG 11` / `SIG 10` with an address near `0x16…` | a stack overflow or a null pointer; send the log |
+
+Also worth reading, when the app does get far enough to write them:
+`Library/Application Support/horizon/logs/latest.log` (the engine's own log) and
+`Library/Application Support/horizon/crash-reports/` (Horizon's crash report, which names the
+panic and the thread).
+
+iOS writes its own report too: **Settings → Privacy & Security → Analytics & Improvements →
+Analytics Data**, then the newest `Horizon-….ips`.
+
 ## Not in the first build
 
 These are the follow-ups, in the order they would be worth doing:
