@@ -14,7 +14,9 @@ crate-type = ["staticlib"]
 [dependencies]
 horizon-client = { path = "../horizon-client", default-features = false }
 horizon-mod-package = { path = "../horizon-mod-package", default-features = false, features = ["index"] }
-horizon-mod-vocab = { path = "../horizon-mod-vocab", default-features = false }
+# `PackageInfo`, the type `entry::CodeRuntime` hands a code runtime; the crate's lib is
+# named `mod_vocab`.
+mod_vocab = { package = "horizon-mod-vocab", path = "../horizon-mod-vocab", default-features = false }
 log = "0.4"
 
 [lints]

@@ -301,7 +301,7 @@ pub use horizon_client_core::key_display::{
 /// A key event: what the layout writes on its key, without modifiers, names
 /// that key from now on (`key_display::learn_layout`), so an AZERTY player's
 /// Q key shows A.
-#[cfg(not(target_os = "android"))]
+#[cfg(all(not(target_os = "android"), not(target_os = "ios")))]
 pub fn learn_layout(event: &winit::event::KeyEvent) {
     use winit::keyboard::{Key, PhysicalKey};
     use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
@@ -319,9 +319,24 @@ pub fn learn_layout(event: &winit::event::KeyEvent) {
     }
 }
 
-// Android does not expose winit's unmodified key extension.
-#[cfg(target_os = "android")]
+// Android and iOS do not expose winit's unmodified key extension.
+#[cfg(any(target_os = "android", target_os = "ios"))]
 pub fn learn_layout(_event: &winit::event::KeyEvent) {}
+
+/// The event's key without modifiers, where the platform reports one: the
+/// desktop's `KeyEventExtModifierSupplement`; elsewhere the logical key, which
+/// already carries the layout's character.
+pub fn key_without_modifiers(event: &winit::event::KeyEvent) -> winit::keyboard::Key {
+    #[cfg(all(not(target_os = "android"), not(target_os = "ios")))]
+    {
+        use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
+        event.key_without_modifiers()
+    }
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        event.logical_key.clone()
+    }
+}
 
 /// Vanilla's name for the key the layout produced (`InputEvent.Key.getKeycode`):
 /// `layout` is the event's key without modifiers. A letter or digit names its
@@ -360,15 +375,25 @@ pub fn layout_key_name(
 /// the platform scan code, or the native code winit reports for a key it
 /// doesn't identify; 0 when there is neither. Stable within a platform only.
 pub fn raw_key_code(physical: winit::keyboard::PhysicalKey) -> u32 {
-    use winit::keyboard::{NativeKeyCode, PhysicalKey};
-    use winit::platform::scancode::PhysicalKeyExtScancode;
-    match physical {
-        PhysicalKey::Unidentified(native) => match native {
-            NativeKeyCode::Android(c) | NativeKeyCode::Xkb(c) => c,
-            NativeKeyCode::MacOS(c) | NativeKeyCode::Windows(c) => c.into(),
-            NativeKeyCode::Unidentified => 0,
-        },
-        PhysicalKey::Code(_) => physical.to_scancode().unwrap_or(0),
+    // Android and iOS builds carry neither winit platform module, and neither
+    // reaches a scan code: 0 is vanilla's "none" (`getScanCode`).
+    #[cfg(any(target_os = "android", target_os = "ios"))]
+    {
+        let _ = physical;
+        0
+    }
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    {
+        use winit::keyboard::{NativeKeyCode, PhysicalKey};
+        use winit::platform::scancode::PhysicalKeyExtScancode;
+        match physical {
+            PhysicalKey::Unidentified(native) => match native {
+                NativeKeyCode::Android(c) | NativeKeyCode::Xkb(c) => c,
+                NativeKeyCode::MacOS(c) | NativeKeyCode::Windows(c) => c.into(),
+                NativeKeyCode::Unidentified => 0,
+            },
+            PhysicalKey::Code(_) => physical.to_scancode().unwrap_or(0),
+        }
     }
 }
 

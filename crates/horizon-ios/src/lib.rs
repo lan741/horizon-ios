@@ -92,7 +92,7 @@ fn run(documents: &std::path::Path, support: &std::path::Path, resources: &std::
     Status::Ok
 }
 
-fn no_code_initialize(_: &[horizon_mod_vocab::PackageInfo]) {}
+fn no_code_initialize(_: &[mod_vocab::PackageInfo]) {}
 fn no_code_refusal(_: &str) -> Option<String> {
     None
 }

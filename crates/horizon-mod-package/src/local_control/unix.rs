@@ -179,7 +179,8 @@ fn check_directory(directory: &Dir, private: bool) -> io::Result<()> {
 fn peer(stream: &Stream) -> io::Result<()> {
     #[cfg(target_os = "linux")]
     let uid = rustix::net::sockopt::socket_peercred(stream)?.uid.as_raw();
-    #[cfg(target_os = "macos")]
+    // iOS is Darwin: `getpeereid` is the same call macOS uses.
+    #[cfg(any(target_os = "macos", target_os = "ios"))]
     let uid = {
         use std::os::fd::AsRawFd;
         let (mut uid, mut gid) = (0, 0);
