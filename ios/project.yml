@@ -75,7 +75,9 @@ targets:
           - "Info.plist"
       # Present only in a build that bundles the player's prepared resources: CI copies them
       # to Resources/horizon-resources, the app finds them with `pathForResource` (docs/ios.md).
+      # The folder's own .gitkeep stays out of the bundle.
       - path: Resources
+        excludes: [".gitkeep"]
         buildPhase: resources
     settings:
       base:

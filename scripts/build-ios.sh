@@ -13,16 +13,16 @@ cd "$(dirname "$0")/.."
 MODE="${1:-unsigned}"
 APP_VERSION="${APP_VERSION:-0.1.0}"
 BUNDLE_ID="${BUNDLE_ID:-dev.horizon.ios}"
-ARCHIVE_DIR="target/aarch64-apple-ios/release"
+ARCHIVE_DIR="target/aarch64-apple-ios/ios"
 
 command -v xcodebuild >/dev/null || { echo "needs macOS and Xcode"; exit 1; }
 command -v xcodegen >/dev/null || { echo "brew install xcodegen"; exit 1; }
 rustup target list --installed | grep -qx aarch64-apple-ios || rustup target add aarch64-apple-ios
 
-echo "==> cargo build (release, aarch64-apple-ios)"
+echo "==> cargo build (profile ios, aarch64-apple-ios)"
 # No default features reach horizon-client: horizon-ios asks for none, so the build has no
 # controllers (gilrs has no iOS backend), no audio, and no Horizon extras.
-cargo build -p horizon-ios --release --target aarch64-apple-ios
+cargo build -p horizon-ios --profile ios --target aarch64-apple-ios
 
 test -f "$ARCHIVE_DIR/libhorizon_ios.a" || { echo "missing $ARCHIVE_DIR/libhorizon_ios.a"; exit 1; }
 mkdir -p ios/lib

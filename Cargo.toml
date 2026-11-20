@@ -169,3 +169,12 @@ inherits = "release"
 lto = false
 codegen-units = 16
 incremental = true
+
+# The iOS app's profile (docs/ios.md): release optimizations, but the parallel code
+# generation a hosted macOS runner needs. `release`'s one codegen unit with thin LTO is
+# several times the wall clock on four cores, and an app links once; the frame-time cost
+# of 16 units is a few per cent on Metal.
+[profile.ios]
+inherits = "release"
+lto = "off"
+codegen-units = 16

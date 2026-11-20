@@ -94,13 +94,13 @@ jobs:
           set -o pipefail
           # `cargo check` for the whole iOS graph first: it fails in minutes, not after an
           # hour of codegen, if a crate in the graph cannot target iOS.
-          cargo check -p horizon-ios --target aarch64-apple-ios 2>&1 | tail -n 120
+          cargo check -p horizon-ios --profile ios --target aarch64-apple-ios 2>&1 | tail -n 120
 
       - name: Build the static library
         run: |
           set -o pipefail
-          cargo build -p horizon-ios --release --target aarch64-apple-ios 2>&1 | tail -n 120
-          ls -l target/aarch64-apple-ios/release/libhorizon_ios.a
+          cargo build -p horizon-ios --profile ios --target aarch64-apple-ios 2>&1 | tail -n 120
+          ls -l target/aarch64-apple-ios/ios/libhorizon_ios.a
 
       - name: Optional prepared resources
         if: ${{ github.event.inputs.bundle_resources == 'true' }}
@@ -130,7 +130,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p ios/lib
-          cp -f target/aarch64-apple-ios/release/libhorizon_ios.a ios/lib/libhorizon_ios.a
+          cp -f target/aarch64-apple-ios/ios/libhorizon_ios.a ios/lib/libhorizon_ios.a
           (cd ios && xcodegen generate --spec project.yml)
           ls -la ios ios/lib
 
