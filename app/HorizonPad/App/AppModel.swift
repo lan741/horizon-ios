@@ -13,6 +13,7 @@ import Metal
 final class AppModel: ObservableObject {
     enum Route: Hashable {
         case importJar
+        case download
         case diagnostics
         case settings
         case packDetail(UUID)

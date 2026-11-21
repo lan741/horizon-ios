@@ -36,6 +36,13 @@ struct HomeView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
+                    model.path.append(.download)
+                } label: {
+                    Label("下载版本", systemImage: "arrow.down.circle")
+                }
+            }
+            ToolbarItem(placement: .primaryAction) {
+                Button {
                     model.path.append(.importJar)
                 } label: {
                     Label("导入", systemImage: "plus")
@@ -62,14 +69,22 @@ struct HomeView: View {
                 .foregroundStyle(.tint)
             Text("还没有资源包")
                 .font(.title3.bold())
-            Text("在电脑上找到 `.minecraft/versions/<版本>/<版本>.jar`，用「导入」选它即可。整个过程离线完成。")
+            Text("导入电脑上的 `.minecraft/versions/<版本>/<版本>.jar`，或者直接从镜像下载一个版本——两者都在设备上完成编译。")
                 .foregroundStyle(.secondary)
-            Button {
-                model.path.append(.importJar)
-            } label: {
-                Label("导入 Minecraft jar", systemImage: "square.and.arrow.down")
+            HStack(spacing: 12) {
+                Button {
+                    model.path.append(.importJar)
+                } label: {
+                    Label("导入 Minecraft jar", systemImage: "square.and.arrow.down")
+                }
+                .buttonStyle(.borderedProminent)
+                Button {
+                    model.path.append(.download)
+                } label: {
+                    Label("下载游戏版本", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.bordered)
             }
-            .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(28)

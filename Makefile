@@ -14,7 +14,7 @@ ifeq ($(OS),Windows_NT)
 	RELEASE := $(ENGINE)/target/release/hz.exe
 endif
 
-.PHONY: all test cli verify ios app stubs preflight check-swift fmt lint clean
+.PHONY: all test cli verify verify-download ios app stubs preflight check-swift fmt lint clean
 
 all: test cli
 
@@ -45,6 +45,10 @@ stubs: cli
 # 上云前自检：绝对路径、缺失引用、超大文件
 preflight:
 	python3 scripts/preflight.py
+
+# 下载链：catalog 断言 + Swift 写出的 zip 能被引擎 unzip/port
+verify-download:
+	python3 scripts/verify-download-chain.py
 
 check-swift:
 	@python3 scripts/swift_check.py || true

@@ -30,6 +30,9 @@ SDK = {
     "simddot", "simdfloat4x4", "precondition", "assert", "fatalfailure",
     "fatalerror", "unsafebitcast", "withunsafebytes",
     "withunsafemutablebufferpointer", "withextendedlifetime", "clamp",
+    # Swift concurrency helpers, all spelled as functions in the standard library.
+    "withthrowingtaskgroup", "withtaskgroup", "withcheckedthrowingcontinuation",
+    "withcheckedcontinuation",
 }
 
 # Names that come from outside the app by design: the C ABI (`hz_*`, checked

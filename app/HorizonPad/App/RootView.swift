@@ -18,6 +18,7 @@ struct RootView: View {
                     .navigationDestination(for: AppModel.Route.self) { route in
                         switch route {
                         case .importJar: ImportView()
+                        case .download: DownloadView()
                         case .diagnostics: DiagnosticsView()
                         case .settings: SettingsView()
                         case .packDetail(let id): PackDetailView(packID: id)

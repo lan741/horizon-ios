@@ -133,6 +133,35 @@ AO 用经典的「两侧 + 对角」三邻规则，系数 1.0 / 0.86 / 0.72 / 0.
 天空光与方块光都烘焙进顶点色，所以昼夜滑块（`set_daylight`）不需要改着色器，
 只是让所有分区失效一次。
 
+## 应用内下载游戏版本
+
+```
+选版本 ──► 镜像取 version_manifest_v2.json
+             │  decode → 版本列表（release / snapshot 分开）
+             ▼
+          取 <version>.json ──► client.jar URL + assetIndex URL
+             │  镜像重写：piston-meta / piston-data → 镜像根
+             ▼
+          取 assetIndex ──► objects{path → hash,size}
+             │  只挑 port 需要的：blockstates / models / block+item 贴图 /
+             │  语言 / sounds.json（音效与着色器可选）
+             ▼
+          按 hash 并发取文件（8 路），逐个校验 SHA-1
+             │  镜像对象 URL：resources.download.minecraft.net → 镜像/assets
+             ▼
+          StoreZipWriter 打成 assets/minecraft/... 的 zip（不压缩）
+             ▼
+          hz_port_jar（与手动导入完全同一条路径）→ .hzp → Library
+```
+
+三点设计取舍：
+
+* **镜像只是 URL 重写**，不是第二套 schema。BMCLAPI 在同路径下服务，所以版本信息和每个
+  对象 URL 都能机械改写；失败时再回落到官方源，一次失败请求的代价换一个不会卡住的界面。
+* **对象是内容寻址的**，所以失败按对象重试、按 SHA-1 校验；坏一个贴图不会变成一个坏包。
+* **zip 用 store 不压缩**：下载已经花掉网络，几百 MB 的 PNG 压缩率只有几个百分点，
+  却要付出一次完整 CPU 往返。固定时间戳让两次运行字节一致，符合引擎的确定性要求。
+
 ## 顶点缓冲分区上传
 
 原来是「所有可见分区的顶点拼成一条流，整条拷给 GPU」：每次重建都要 memcpy 2.6 MiB，
