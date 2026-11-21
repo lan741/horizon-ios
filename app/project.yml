@@ -10,8 +10,12 @@
 name: HorizonPad
 options:
   bundleIdPrefix: dev.playhorizon.pad
+  # Minimum OS the app runs on. Deliberately not "27.0": a deployment target above
+  # the build host's SDK makes xcodebuild fall back to "My Mac (Designed for
+  # iPad)" and fail. The app still runs on iPadOS 27.2 — that is the *maximum*
+  # version, not a requirement.
   deploymentTarget:
-    iOS: "27.0"
+    iOS: "17.0"
   createIntermediateGroups: true
   groupSortPosition: top
 

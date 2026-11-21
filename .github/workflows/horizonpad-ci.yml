@@ -171,6 +171,12 @@ jobs:
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           echo "using simulator $UDID"
 
+      - name: Report the toolchain
+        run: |
+          xcodebuild -version
+          xcrun --sdk iphoneos --show-sdk-version
+          xcrun --sdk iphonesimulator --show-sdk-version
+
       - name: Build for the simulator
         run: |
           set -euo pipefail
