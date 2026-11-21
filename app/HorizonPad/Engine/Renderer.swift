@@ -46,7 +46,8 @@ final class Renderer: NSObject, MTKViewDelegate {
     private var vertexCapacityFloats: Int
     private var vertexCount: Int = 0
 
-    private(set) var camera = Camera()
+    /// Driven every frame by `GameSession`; read by the draw path.
+    var camera = Camera()
     private var uniformBuffer: MTLBuffer
 
     /// One array slice per engine texture; nil until `upload(textures:)` runs.
@@ -187,6 +188,26 @@ final class Renderer: NSObject, MTKViewDelegate {
     /// array is one allocation and the shader can index it directly. Textures
     /// that fail to decode are replaced by a 1×1 magenta slice, which makes
     /// missing assets obvious instead of silently black.
+    /// Apply the values the session computes each frame.
+    ///
+    /// A method rather than four property writes so the eye height and the
+    /// daylight factor stay in one place; `daylight` also feeds the shader-pack
+    /// uniform, and forgetting it there would only show up as a wrong colour.
+    func updateCamera(position: SIMD3<Float>,
+                      yaw: Float,
+                      pitch: Float,
+                      time: Float,
+                      daylight: Float) {
+        camera.position = position + SIMD3(0, eyeHeight, 0)
+        camera.yaw = yaw
+        camera.pitch = pitch
+        camera.time = time
+        camera.daylight = daylight
+    }
+
+    /// Eye height above the player's feet.
+    private let eyeHeight: Float = 1.62
+
     /// Compile a pack's Metal source and adopt it as the drawing pipeline.
     ///
     /// Failure is not fatal: the built-in pipeline stays active and the reason is

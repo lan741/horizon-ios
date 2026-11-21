@@ -161,10 +161,11 @@ final class GameSession {
             stats = handle.stats
         }
 
-        renderer.camera.position = position + SIMD3(0, 1.62, 0)
-        renderer.camera.yaw = yaw
-        renderer.camera.pitch = pitch
-        renderer.camera.time = Float(now)
+        renderer.updateCamera(position: position,
+                              yaw: yaw,
+                              pitch: pitch,
+                              time: Float(now),
+                              daylight: daylight)
     }
 
     /// Daylight 0…1, driving the sky channel.
