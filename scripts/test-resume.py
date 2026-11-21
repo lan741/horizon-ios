@@ -16,21 +16,51 @@ traffic means no internet is needed.
 
 import hashlib
 import http.server
+import shutil
 import json
 import pathlib
 import socket
 import socketserver
 import subprocess
+import os
 import sys
 import threading
 
 sys.stdout.reconfigure(encoding="utf-8")
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
-SWIFT_ROOT = pathlib.Path.home() / "AppData/Local/Programs/Swift"  # Windows installer default
-SWIFTC = SWIFT_ROOT / "Toolchains/6.4.3+Asserts/usr/bin/swiftc.exe"
-SDK = SWIFT_ROOT / "Platforms/6.4.3/Windows.platform/Developer/SDKs/Windows.sdk"
-RUNTIME = SWIFT_ROOT / "Runtimes/6.4.3/usr/bin"
+def find_swiftc():
+    env = os.environ.get("SWIFTC")
+    if env:
+        return pathlib.Path(env)
+    found = shutil.which("swiftc")
+    if found:
+        return pathlib.Path(found)
+    # Windows installer default, where swiftc is not on PATH.
+    guess = pathlib.Path.home() / (
+        "AppData/Local/Programs/Swift/Toolchains/6.4.3+Asserts/usr/bin/swiftc.exe"
+    )
+    return guess if guess.exists() else None
+
+
+def swift_env(swiftc):
+    env = dict(os.environ)
+    if sys.platform == "win32":
+        root = swiftc.parents[4]
+        runtimes = sorted((root / "Runtimes").glob("*/usr/bin"))
+        if runtimes:
+            env["PATH"] = str(runtimes[-1]) + os.pathsep + env.get("PATH", "")
+    return env
+
+
+def sdk_args(swiftc):
+    if sys.platform != "win32":
+        return []
+    root = swiftc.parents[4]
+    candidates = sorted((root / "Platforms").glob("*/Windows.platform/Developer/SDKs/Windows.sdk"))
+    return ["-sdk", str(candidates[-1])] if candidates else []
+
+
 WORK = ROOT / ".build/resume-test"
 WORK.mkdir(exist_ok=True)
 
@@ -140,10 +170,17 @@ print("after resume: complete file has \(final) bytes, Range sent = \(second)")
 test_main = WORK / "main.swift"
 test_main.write_text(TEST_MAIN, encoding="utf-8")
 
-exe = WORK / "resume-test.exe"
+swiftc = find_swiftc()
+if swiftc is None:
+    print("no Swift toolchain (set SWIFTC or install one); skipping the resume test")
+    sys.exit(2)
+
+exe = WORK / ("resume-test.exe" if sys.platform == "win32" else "resume-test")
 build = subprocess.run(
     [
-        str(SWIFTC), "-sdk", str(SDK), "-swift-version", "5", "-O",
+        str(swiftc),
+        *sdk_args(swiftc),
+        "-swift-version", "5", "-O",
         str(ROOT / "app/HorizonPad/Engine/DownloadStore.swift"),
         str(test_main), "-o", str(exe),
     ],
@@ -157,10 +194,7 @@ if build.returncode != 0:
 server = socketserver.TCPServer(("127.0.0.1", PORT), Handler)
 threading.Thread(target=server.serve_forever, daemon=True).start()
 
-import os
-
-env = dict(os.environ)
-env["PATH"] = str(RUNTIME) + os.pathsep + env.get("PATH", "")
+env = swift_env(swiftc)
 out = subprocess.run(
     [str(exe), f"http://127.0.0.1:{PORT}/payload.bin", str(WORK / "payload.bin")],
     capture_output=True, text=True, encoding="utf-8", env=env,
