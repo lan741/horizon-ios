@@ -199,6 +199,12 @@ git push -u origin main
    （`security import` + `xcodebuild -exportArchive`）。证书一旦进 CI 就等于交给 GitHub，
    自行权衡。
 
+### 关于 macOS 自带的 bash
+
+`scripts/swift_typecheck.sh` 只用 bash 3.2 支持的语法：`mapfile` 是 bash 4 的
+builtin，macOS 的 `/bin/bash` 没有它，用了会直接 `command not found`。
+空数组在 `set -u` 下也要写成 `${ARR[@]+"${ARR[@]}"}`，否则 bash 3.2 报 unbound。
+
 ### 只想验证引擎、不碰 iOS
 
 `ci.yml` 的 `engine` job 在 Ubuntu / macOS / Windows 上各跑一遍 127 个测试；

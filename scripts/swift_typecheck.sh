@@ -29,7 +29,12 @@ fi
 echo "swiftc: $(command -v swiftc)"
 swiftc --version | head -n 1
 
-mapfile -t SOURCES < <(find "$APP" -name '*.swift' | sort)
+# `mapfile` is a bash 4 builtin and macOS still ships bash 3.2, so read the list
+# the portable way.
+SOURCES=()
+while IFS= read -r file; do
+  SOURCES+=("$file")
+done < <(find "$APP" -name '*.swift' | sort)
 if [ "${#SOURCES[@]}" -eq 0 ]; then
   echo "no Swift sources found" >&2
   exit 1
@@ -43,7 +48,7 @@ SWIFTC_REAL="$(command -v swiftc)"
 dir="$(cd "$(dirname "$SWIFTC_REAL")" && pwd)"
 for _ in 1 2 3 4 5 6; do
   if [ -d "$dir/Platforms" ]; then
-    sdk="$(find "$dir/Platforms" -maxdepth 5 -type d -name 'Windows.sdk' 2>/dev/null | head -n 1)"
+    sdk="$(find "$dir/Platforms" -maxdepth 5 -type d -name 'Windows.sdk' 2>/dev/null | sed -n '1p')"
     if [ -n "${sdk:-}" ]; then
       echo "sdk: $sdk"
       SDK_ARGS=(-sdk "$sdk")
@@ -68,11 +73,11 @@ step() {
 
 # 1. parse --------------------------------------------------------------------
 step "parse (${#SOURCES[@]} files)" \
-  swiftc -parse -swift-version 5 "${SDK_ARGS[@]}" "${SOURCES[@]}"
+  swiftc -parse -swift-version 5 ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} "${SOURCES[@]}"
 
 # 2. Foundation-only files, with the C header imported -------------------------
 step "typecheck Foundation + hz_ffi" \
-  swiftc -typecheck -swift-version 5 "${SDK_ARGS[@]}" \
+  swiftc -typecheck -swift-version 5 ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} \
     -import-objc-header "$BRIDGING" \
     -Xcc "-I$INCLUDE" \
     "$APP/HorizonPad/Support/Paths.swift" \
@@ -80,10 +85,10 @@ step "typecheck Foundation + hz_ffi" \
 
 # 3. model layer against the Combine shim -------------------------------------
 mkdir -p "$BUILD"
-if swiftc -emit-module -module-name Combine -swift-version 5 "${SDK_ARGS[@]}" \
+if swiftc -emit-module -module-name Combine -swift-version 5 ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} \
     -emit-module-path "$BUILD/Combine.swiftmodule" "$SHIM"; then
   step "typecheck model layer + Combine shim" \
-    swiftc -typecheck -swift-version 5 "${SDK_ARGS[@]}" -I "$BUILD" \
+    swiftc -typecheck -swift-version 5 ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} -I "$BUILD" \
       "$APP/HorizonPad/Support/Paths.swift" \
       "$APP/HorizonPad/Model/Library.swift" \
       "$APP/HorizonPad/Model/Settings.swift"
