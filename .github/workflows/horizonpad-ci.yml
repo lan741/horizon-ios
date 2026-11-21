@@ -199,19 +199,22 @@ jobs:
             | tee "$RUNNER_TEMP/tests.log"
           tail -n 30 "$RUNNER_TEMP/tests.log"
 
-      # This image has no iOS simulator runtime, only visionOS ones. Running the
-      # tests needs one; compiling them does not, and that already happened. The
-      # guard has to be the selector itself rather than a grep on the runtime
-      # list, which matched the visionOS entries.
-      - name: Run the tests if an iOS simulator exists
+      # simctl and xcodebuild disagree on this image: simctl lists an iPhone in an
+      # iOS runtime, while Xcode's own destination list contains none (only
+      # visionOS plus the "My Mac" placeholder it then refuses). Ask Xcode, since
+      # that is the thing that has to accept the destination.
+      - name: Run the tests if Xcode offers a simulator
         run: |
           set -euo pipefail
-          if ! xcrun simctl list devices available -j > "$RUNNER_TEMP/sims.json" 2>/dev/null; then
-            echo "no simulator devices on this image; the test bundle was still compiled"
-            exit 0
-          fi
-          if ! UDID=$(python3 scripts/pick_simulator.py "$RUNNER_TEMP/sims.json"); then
-            echo "no iPhone simulator in an iOS runtime; the test bundle was still compiled"
+          DESTS=$(xcodebuild -project app/HorizonPad.xcodeproj -scheme HorizonPad \
+                    -showdestinations 2>/dev/null || true)
+          UDID=$(printf '%s\n' "$DESTS" \
+                 | grep 'platform:iOS Simulator' \
+                 | grep -o 'id:[0-9A-Fa-f-]\{8,\}' \
+                 | head -n 1 | cut -d: -f2 || true)
+          if [ -z "${UDID:-}" ]; then
+            echo "Xcode offers no iOS simulator destination on this image"
+            echo "the app and its test bundle were compiled; running them needs a runtime"
             exit 0
           fi
           xcodebuild test \
