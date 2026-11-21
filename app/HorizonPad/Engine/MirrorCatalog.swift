@@ -27,7 +27,12 @@ import Foundation
 // MARK: - Mirrors
 
 /// A download source. `rewrite` turns an upstream URL into this mirror's URL.
-struct Mirror: Identifiable, Equatable, Sendable {
+///
+/// Named `DownloadMirror` rather than `Mirror` on purpose: a module-level type
+/// called `Mirror` shadows `Swift.Mirror`, and that silently broke unrelated
+/// reflection code elsewhere in the app (`uname` hardware identification). The
+/// collision cost a full CI cycle to find, so the name carries the reason.
+struct DownloadMirror: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
     let note: String
@@ -50,8 +55,8 @@ struct Mirror: Identifiable, Equatable, Sendable {
         return url
     }
 
-    static let all: [Mirror] = [
-        Mirror(
+    static let all: [DownloadMirror] = [
+        DownloadMirror(
             id: "bmclapi",
             name: "BMCLAPI 镜像",
             note: "国内直连，速度通常明显快于官方",
@@ -68,7 +73,7 @@ struct Mirror: Identifiable, Equatable, Sendable {
                 ),
             ]
         ),
-        Mirror(
+        DownloadMirror(
             id: "official",
             name: "官方源",
             note: "piston-meta.mojang.com，海外网络更稳",
@@ -77,7 +82,7 @@ struct Mirror: Identifiable, Equatable, Sendable {
         ),
     ]
 
-    static func named(_ id: String) -> Mirror {
+    static func named(_ id: String) -> DownloadMirror {
         all.first { $0.id == id } ?? all[0]
     }
 }
@@ -280,7 +285,7 @@ enum AssetPlanner {
 enum ObjectURL {
     /// Objects live at `resources.download.minecraft.net/<hh>/<hash>`; the mirror
     /// shadows that host with `/assets`.
-    static func forHash(_ hash: String, mirror: Mirror) -> URL {
+    static func forHash(_ hash: String, mirror: DownloadMirror) -> URL {
         let prefix = String(hash.prefix(2))
         let upstream = URL(string: "https://resources.download.minecraft.net/\(prefix)/\(hash)")!
         return mirror.rewrite(upstream)

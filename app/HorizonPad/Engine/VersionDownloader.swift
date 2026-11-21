@@ -61,7 +61,7 @@ final class VersionDownloader: ObservableObject {
         session = URLSession(configuration: config)
     }
 
-    var mirror: Mirror { Mirror.named(mirrorID) }
+    var mirror: DownloadMirror { DownloadMirror.named(mirrorID) }
 
     var visibleVersions: [RemoteVersion] {
         onlyReleases ? versions.filter(\.isRelease) : versions
@@ -96,12 +96,12 @@ final class VersionDownloader: ObservableObject {
 
             // 1. version metadata
             phase = .downloading(step: "版本信息", done: 0, total: 1)
-            let metaData = try await getWithFallback(version.metadataURL)
+            let metaData = try await getWithFallbackData(version.metadataURL)
             let info = try CatalogDecoder.version(from: metaData)
 
             // 2. asset index
             phase = .downloading(step: "资源索引", done: 0, total: 1)
-            let indexData = try await getWithFallback(info.assetIndexURL)
+            let indexData = try await getWithFallbackData(info.assetIndexURL)
             let objects = try CatalogDecoder.assetIndex(from: indexData)
             let plan = AssetPlanner.plan(objects: objects, selection: selection)
             guard !plan.isEmpty else {

@@ -94,8 +94,8 @@ do {
     print("  FAIL version decode threw \(error)"); failures += 1
 }
 
-let bmcl = Mirror.named("bmclapi")
-let official = Mirror.named("official")
+let bmcl = DownloadMirror.named("bmclapi")
+let official = DownloadMirror.named("official")
 let meta = URL(string: "https://piston-meta.mojang.com/v1/packages/f3df/34.json")!
 check(bmcl.rewrite(meta).absoluteString == "https://bmclapi2.bangbang93.com/v1/packages/f3df/34.json",
       "mirror: piston-meta rewritten to the mirror root")

@@ -21,12 +21,12 @@ struct DownloadView: View {
         Form {
             Section {
                 Picker("下载源", selection: $downloader.mirrorID) {
-                    ForEach(Mirror.all) { mirror in
+                    ForEach(DownloadMirror.all) { mirror in
                         Text(mirror.name).tag(mirror.id)
                     }
                 }
                 .pickerStyle(.segmented)
-                Text(Mirror.named(downloader.mirrorID).note)
+                Text(DownloadMirror.named(downloader.mirrorID).note)
                     .font(.caption)
                     .foregroundStyle(.secondary)
             } header: {
