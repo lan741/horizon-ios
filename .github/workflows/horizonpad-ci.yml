@@ -159,30 +159,17 @@ jobs:
         run: cd app && xcodegen generate
 
       # Runner images change their simulator lineup; ask instead of guessing.
-      # The selector must stay inside iOS runtimes: the device list also contains
-      # a "My Mac" placeholder, and picking it makes xcodebuild fail with
-      # "Xcode doesn't support My Mac's macOS".
+      # The selector lives in scripts/pick_simulator.py: an inline heredoc here
+      # keeps its YAML indentation, which Python rejects, and that surfaced as an
+      # empty destination id rather than an error.
       - name: Pick a simulator
         id: sim
         run: |
           set -euo pipefail
           xcrun simctl list devices available -j > "$RUNNER_TEMP/sims.json"
-          UDID=$(python3 - "$RUNNER_TEMP/sims.json" <<'PY'
-          import json, sys
-          devices = json.load(open(sys.argv[1]))["devices"]
-          for runtime, entries in devices.items():
-              if "SimRuntime.iOS-" not in runtime:
-                  continue
-              for entry in entries:
-                  if entry.get("isAvailable") and entry["name"].startswith("iPhone"):
-                      print(entry["udid"])
-                      sys.exit(0)
-          sys.exit("no available iPhone simulator in an iOS runtime")
-          PY
-          )
+          UDID=$(python3 scripts/pick_simulator.py "$RUNNER_TEMP/sims.json")
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
           echo "using simulator $UDID"
-          xcrun simctl list devices available | sed -n '1,20p'
 
       - name: Build for the simulator
         run: |
