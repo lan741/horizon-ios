@@ -50,9 +50,20 @@ jobs:
         id: sim
         run: |
           set -euo pipefail
-          UDID=$(xcrun simctl list devices available -j |
-            python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; \
-              print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']))")
+          xcrun simctl list devices available -j > "$RUNNER_TEMP/sims.json"
+          UDID=$(python3 - "$RUNNER_TEMP/sims.json" <<'PY'
+          import json, sys
+          devices = json.load(open(sys.argv[1]))["devices"]
+          for runtime, entries in devices.items():
+              if "SimRuntime.iOS-" not in runtime:
+                  continue
+              for entry in entries:
+                  if entry.get("isAvailable") and entry["name"].startswith("iPhone"):
+                      print(entry["udid"])
+                      sys.exit(0)
+          sys.exit("no available iPhone simulator in an iOS runtime")
+          PY
+          )
           echo "udid=$UDID" >> "$GITHUB_OUTPUT"
 
       - name: Build
