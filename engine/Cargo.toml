@@ -1,0 +1,34 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/hz-core",
+    "crates/hz-class",
+    "crates/hz-vorbis",
+    "crates/hz-port",
+    "crates/hz-game",
+    "crates/hz-ffi",
+    "crates/hz-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+
+[workspace.dependencies]
+hz-core = { path = "crates/hz-core" }
+hz-class = { path = "crates/hz-class" }
+hz-vorbis = { path = "crates/hz-vorbis" }
+hz-port = { path = "crates/hz-port" }
+hz-game = { path = "crates/hz-game" }
+
+# iOS builds: staticlib for the FFI, cdylib for desktop tooling.
+# zero third-party crates on purpose: the engine must build offline in CI and
+# must not pull a crates.io graph we cannot audit for on-device use.
+
+[profile.release]
+panic = "abort"
+lto = "thin"
+codegen-units = 1
+opt-level = 3
+strip = "symbols"

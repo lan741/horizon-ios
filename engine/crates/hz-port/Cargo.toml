@@ -1,0 +1,13 @@
+[package]
+name = "hz-port"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "hz_port"
+path = "src/lib.rs"
+
+[dependencies]
+hz-core = { workspace = true }
+hz-class = { workspace = true }

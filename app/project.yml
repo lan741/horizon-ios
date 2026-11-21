@@ -1,0 +1,76 @@
+# XcodeGen spec for HorizonPad.
+#
+#   brew install xcodegen
+#   ./scripts/build-ios.sh          # builds the Rust static libs first
+#   cd app && xcodegen generate
+#   open HorizonPad.xcodeproj
+#
+# Deployment target is iPadOS 27.0; the app is universal (iPad + iPhone) but
+# laid out for iPad.
+name: HorizonPad
+options:
+  bundleIdPrefix: dev.playhorizon.pad
+  deploymentTarget:
+    iOS: "27.0"
+  createIntermediateGroups: true
+  groupSortPosition: top
+
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+    SWIFT_STRICT_CONCURRENCY: minimal
+    IPHONEOS_DEPLOYMENT_TARGET: "27.0"
+    TARGETED_DEVICE_FAMILY: "1,2"
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
+    DEAD_CODE_STRIPPING: YES
+    CLANG_ENABLE_MODULES: YES
+    GCC_C_LANGUAGE_STANDARD: gnu17
+    # The Rust archive is release-built; keep the Swift side optimised in
+    # Release only, and debuggable in Debug.
+    SWIFT_OPTIMIZATION_LEVEL: "-Onone"
+  configs:
+    Release:
+      SWIFT_OPTIMIZATION_LEVEL: "-O"
+      SWIFT_COMPILATION_MODE: wholemodule
+
+targets:
+  HorizonPad:
+    type: application
+    platform: iOS
+    sources:
+      - path: HorizonPad
+        excludes:
+          - "Info.plist"
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.playhorizon.pad
+        INFOPLIST_FILE: HorizonPad/Info.plist
+        CODE_SIGN_ENTITLEMENTS: HorizonPad/HorizonPad.entitlements
+        SWIFT_OBJC_BRIDGING_HEADER: HorizonPad/Bridge/HorizonPad-Bridging-Header.h
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/../engine/include
+        # The device and the simulator need differently-built archives, so the
+        # search path is selected per SDK instead of hard-coding one.
+        LIBRARY_SEARCH_PATHS[sdk=iphoneos*]:
+          - $(SRCROOT)/../engine/target/ios
+        LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]:
+          - $(SRCROOT)/../engine/target/ios-sim
+        OTHER_LDFLAGS:
+          - -lhz_ffi
+          - -lc++
+        METAL_FAST_MATH: YES
+    scheme:
+      testTargets:
+        - HorizonPadTests
+
+  HorizonPadTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: HorizonPadTests
+    dependencies:
+      - target: HorizonPad
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.playhorizon.pad.tests
+        GENERATE_INFOPLIST_FILE: YES

@@ -1,0 +1,229 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # Cheapest possible gate: does a fresh checkout have everything the other
+  # jobs need, and does it avoid absolute paths that only exist on one machine?
+  # ---------------------------------------------------------------------------
+  preflight:
+    name: Preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install pyyaml
+      - run: python3 scripts/preflight.py
+
+  # ---------------------------------------------------------------------------
+  # Engine: every host that has a Rust toolchain. This is where the bulk of the
+  # tests live, so it runs on three operating systems.
+  # ---------------------------------------------------------------------------
+  engine:
+    name: Engine (${{ matrix.os }})
+    needs: preflight
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-14, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+
+      - name: Format
+        if: runner.os == 'Linux'
+        run: cargo fmt --manifest-path engine/Cargo.toml -- --check
+
+      - name: Clippy
+        if: runner.os == 'Linux'
+        run: cargo clippy --manifest-path engine/Cargo.toml --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --manifest-path engine/Cargo.toml
+
+      - name: Build CLI and self-test
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --manifest-path engine/Cargo.toml -p hz-cli
+          ./engine/target/release/hz selftest
+
+      # The Vorbis decoder is a vendored C file compiled by build.rs; this proves
+      # the compiler was found and the samples came out sane.
+      - name: Decode the Vorbis fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          out=$(./engine/target/release/hz sound-check engine/tests/data/tiny.ogg)
+          echo "$out"
+          echo "$out" | grep -q 'decoded:'
+          echo "$out" | grep -q 'checksums_ok=true'
+
+      - name: Translate the shader fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./engine/target/release/hz shader-translate \
+            engine/tests/data/shader_pack.zip "$RUNNER_TEMP/terrain.metal"
+          grep -q 'hz_vertex' "$RUNNER_TEMP/terrain.metal"
+          grep -q 'hz_fragment' "$RUNNER_TEMP/terrain.metal"
+
+  # ---------------------------------------------------------------------------
+  # Round-trip against an unrelated ZIP writer, on Windows only: it builds a
+  # jar with PowerShell's own archiver and checks our inflate against it.
+  # ---------------------------------------------------------------------------
+  roundtrip:
+    name: Round-trip against PowerShell's ZIP writer
+    needs: preflight
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Build CLI
+        run: cargo build --release --manifest-path engine/Cargo.toml -p hz-cli
+      - name: Verify pipeline
+        run: pwsh -File scripts/verify-pipeline.ps1
+
+  # ---------------------------------------------------------------------------
+  # Swift structure checks: cheap, no toolchain needed.
+  # ---------------------------------------------------------------------------
+  swift-structure:
+    name: Swift structural checks
+    needs: preflight
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python3 scripts/swift_check.py
+      # Catches a name used as `foo(...)` that no file declares.
+      - run: python3 scripts/swift_refs.py
+
+  # ---------------------------------------------------------------------------
+  # The real thing: cross-compile the engine for iOS, generate the Xcode
+  # project, build the app for the simulator, run its tests, and compile the
+  # generated Metal source. No Apple developer account is needed because nothing
+  # is signed.
+  # ---------------------------------------------------------------------------
+  ios:
+    name: iOS build (simulator, unsigned)
+    needs: preflight
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+
+      - name: Build the Rust static libraries
+        run: bash scripts/build-ios.sh
+
+      - name: Swift compile checks
+        run: bash scripts/swift_typecheck.sh
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: cd app && xcodegen generate
+
+      # Runner images change their simulator lineup; ask instead of guessing.
+      - name: Pick a simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available -j |
+            python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; \
+              print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']))")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+          echo "using simulator $UDID"
+
+      - name: Build for the simulator
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project app/HorizonPad.xcodeproj \
+            -scheme HorizonPad \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO \
+            | tee "$RUNNER_TEMP/build.log"
+          tail -n 40 "$RUNNER_TEMP/build.log"
+
+      - name: Run the Swift tests on the simulator
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project app/HorizonPad.xcodeproj \
+            -scheme HorizonPad \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO
+
+      # The two things only a real Metal compiler can prove.
+      - name: Compile the generated Metal source
+        run: |
+          set -euo pipefail
+          ./engine/target/release/hz shader-translate \
+            engine/tests/data/shader_pack.zip "$RUNNER_TEMP/terrain.metal"
+          xcrun -sdk iphonesimulator metal -c "$RUNNER_TEMP/terrain.metal" \
+            -o "$RUNNER_TEMP/terrain.air"
+          echo "generated MSL compiles for the simulator"
+
+      - name: Package the simulator app
+        run: |
+          set -euo pipefail
+          APP=$(find "$RUNNER_TEMP/dd/Build/Products" -name 'HorizonPad.app' -type d | head -n 1)
+          if [ -z "${APP:-}" ]; then
+            echo "HorizonPad.app not found" >&2
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/HorizonPad-simulator.zip"
+          ls -lh "$RUNNER_TEMP/HorizonPad-simulator.zip"
+
+      - name: Upload the simulator build
+        uses: actions/upload-artifact@v4
+        with:
+          name: HorizonPad-simulator
+          path: ${{ runner.temp }}/HorizonPad-simulator.zip
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload the Rust libraries
+        uses: actions/upload-artifact@v4
+        with:
+          name: hz-ffi-libraries
+          path: |
+            engine/target/ios/libhz_ffi.a
+            engine/target/ios-sim/libhz_ffi.a
+          if-no-files-found: error
+          retention-days: 14

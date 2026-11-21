@@ -1,0 +1,28 @@
+# æ„å»ºäº§ç‰©
+/engine/target/
+/app/HorizonPad.xcodeproj/
+/app/build/
+/app/DerivedData/
+*.xcuserstate
+xcuserdata/
+.swiftpm/
+.DS_Store
+Thumbs.db
+
+# æœ¬åœ°å¯¼å…¥çš„ä¸œè¥¿ï¼šç»ä¸è¦æäº¤
+*.jar
+*.hzp
+*.hzw
+*.report.json
+stubs/
+
+# ç¼–è¾‘å™¨
+.vscode/
+.idea/
+*.swp
+*~
+# ±¾µØ»ù×¼²úÎï
+.bench/
+
+# ±¾µØ¼ì²é²úÎï
+/.build/

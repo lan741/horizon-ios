@@ -1,0 +1,16 @@
+[package]
+name = "hz-cli"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "hz"
+path = "src/main.rs"
+
+[dependencies]
+hz-core = { workspace = true }
+hz-port = { workspace = true }
+hz-game = { workspace = true }
+hz-class = { workspace = true }
+hz-vorbis = { workspace = true }

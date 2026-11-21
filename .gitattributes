@@ -1,0 +1,7 @@
+* text=auto eol=lf
+# Windows ?????? CRLF ???
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.exe binary
+*.ogg binary
+*.a binary

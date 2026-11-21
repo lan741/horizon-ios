@@ -1,0 +1,15 @@
+[package]
+name = "hz-game"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[lib]
+name = "hz_game"
+path = "src/lib.rs"
+
+[dependencies]
+hz-core = { workspace = true }
+
+[dev-dependencies]
+hz-port = { workspace = true }

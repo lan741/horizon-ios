@@ -1,0 +1,94 @@
+name: Build iOS app
+
+# Manual builds, plus a tag like `v0.1.0`.
+#
+# This produces an **unsigned simulator** app and the Rust static libraries.
+# It deliberately does not produce an installable .ipa: that needs a signing
+# identity, which means an Apple developer account and secrets this repository
+# does not have. See docs/BUILD.md, "在 GitHub 上编译".
+
+on:
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: "Xcode configuration"
+        type: choice
+        options: [Debug, Release]
+        default: Debug
+  push:
+    tags:
+      - "v*"
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build app (simulator, unsigned)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios,aarch64-apple-ios-sim
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+
+      - name: Build the Rust static libraries
+        run: bash scripts/build-ios.sh
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: cd app && xcodegen generate
+
+      - name: Pick a simulator
+        id: sim
+        run: |
+          set -euo pipefail
+          UDID=$(xcrun simctl list devices available -j |
+            python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; \
+              print(next(x['udid'] for k,v in d.items() if 'iOS' in k for x in v if 'iPhone' in x['name']))")
+          echo "udid=$UDID" >> "$GITHUB_OUTPUT"
+
+      - name: Build
+        env:
+          CONFIG: ${{ github.event.inputs.configuration || 'Release' }}
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project app/HorizonPad.xcodeproj \
+            -scheme HorizonPad \
+            -configuration "$CONFIG" \
+            -destination "platform=iOS Simulator,id=${{ steps.sim.outputs.udid }}" \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGNING_ALLOWED=NO
+
+      - name: Package
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/dd/Build/Products/$(ls "$RUNNER_TEMP/dd/Build/Products" | head -n 1)/HorizonPad.app"
+          if [ ! -d "$APP" ]; then
+            echo "expected $APP" >&2
+            ls -R "$RUNNER_TEMP/dd/Build/Products" | head -n 40 >&2
+            exit 1
+          fi
+          ditto -c -k --sequesterRsrc --keepParent "$APP" "$RUNNER_TEMP/HorizonPad.zip"
+          shasum -a 256 "$RUNNER_TEMP/HorizonPad.zip" | tee "$RUNNER_TEMP/SHA256SUMS"
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: HorizonPad-${{ github.ref_name }}
+          path: |
+            ${{ runner.temp }}/HorizonPad.zip
+            ${{ runner.temp }}/SHA256SUMS
+          retention-days: 30
+
+  # When a real certificate is available, add it here as secrets and switch
+  # CODE_SIGNING_ALLOWED to YES with a provisioning profile. Until then an
+  # unsigned build is the honest deliverable.

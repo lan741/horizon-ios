@@ -1,0 +1,15 @@
+[package]
+name = "hz-vorbis"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+build = "build.rs"
+
+[lib]
+name = "hz_vorbis"
+path = "src/lib.rs"
+
+# No runtime dependencies. The build script compiles the vendored upstream
+# `stb_vorbis.c` with the host C compiler and links the resulting archive; it
+# uses nothing but the standard library, so `cargo build` still needs no
+# crates.io graph for the shipped engine.
