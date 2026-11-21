@@ -229,6 +229,8 @@ jobs:
       - name: Compile the generated Metal source
         run: |
           set -euo pipefail
+          # The CLI is a host binary; this job only built the static library above.
+          cargo build --release --manifest-path engine/Cargo.toml -p hz-cli
           ./engine/target/release/hz shader-translate \
             engine/tests/data/shader_pack.zip "$RUNNER_TEMP/terrain.metal"
           # Device SDK is always installed; the simulator SDK only on images that
