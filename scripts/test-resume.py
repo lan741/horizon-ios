@@ -62,7 +62,7 @@ def sdk_args(swiftc):
 
 
 WORK = ROOT / ".build/resume-test"
-WORK.mkdir(exist_ok=True)
+WORK.mkdir(parents=True, exist_ok=True)
 
 # 512 KiB of deterministic bytes.
 PAYLOAD = bytes((i * 37 + (i >> 8)) & 0xFF for i in range(512 * 1024))
