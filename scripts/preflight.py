@@ -80,7 +80,14 @@ def check_referenced_files() -> list[str]:
         p.read_text(encoding="utf-8")
         for p in (ROOT / ".github" / "workflows").glob("*.yml")
     )
-    for match in re.finditer(r"(scripts/[\w.-]+|engine/[\w./-]+|app/[\w./-]+)", workflow_text):
+    # A path only counts when it starts a word: `HorizonPad.app/Payload` inside a
+    # shell command is not a repository path, but the old pattern matched the
+    # `app/...` substring of it and reported a file that was never meant to exist.
+    pattern = re.compile(
+        r"(?:(?<=^)|(?<=[\s'\"=(]))(scripts/[\w.-]+|engine/[\w./-]+|app/[\w./-]+)",
+        re.M,
+    )
+    for match in pattern.finditer(workflow_text):
         rel = match.group(1).rstrip(".,")
         # Compare with and without the trailing slash: a workflow may name the
         # bundle directory itself (`app/HorizonPad.xcodeproj`).

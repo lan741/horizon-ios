@@ -1,0 +1,114 @@
+name: Build unsigned IPA
+
+# Produces a device (arm64) IPA that sideloading tools can re-sign:
+#
+#   Payload/HorizonPad.app  →  HorizonPad-unsigned.ipa
+#
+# It is unsigned on purpose. iOS will not install it as-is; AltStore, Sideloadly,
+# 爱思助手 and friends re-sign it with the user's own Apple ID, which is the only
+# free path to a device build. Signing it here would require a certificate and a
+# provisioning profile in repository secrets, and shipping those to CI is a
+# decision for the repository owner, not a default.
+
+on:
+  push:
+    branches: [main, horizonpad-engine]
+  workflow_dispatch:
+    inputs:
+      configuration:
+        description: "Xcode configuration"
+        type: choice
+        options: [Debug, Release]
+        default: Release
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ipa:
+    name: IPA (device, unsigned)
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-ios
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: engine
+
+      - name: Build the device static library
+        run: bash scripts/build-ios.sh
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate the Xcode project
+        run: cd app && xcodegen generate
+
+      - name: Build for the device
+        env:
+          CONFIG: ${{ github.event.inputs.configuration || 'Release' }}
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project app/HorizonPad.xcodeproj \
+            -scheme HorizonPad \
+            -configuration "$CONFIG" \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/dd" \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=YES \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            | tee "$RUNNER_TEMP/build.log"
+          tail -n 30 "$RUNNER_TEMP/build.log"
+
+      # An IPA is a zip whose root holds Payload/<Name>.app. Sideloading tools are
+      # strict about that layout, so it is built explicitly rather than by zipping
+      # whatever directory happens to contain the .app.
+      - name: Package Payload/HorizonPad.app as an IPA
+        run: |
+          set -euo pipefail
+          APP=$(find "$RUNNER_TEMP/dd/Build/Products" -maxdepth 2 -name 'HorizonPad.app' -type d | head -n 1)
+          if [ -z "${APP:-}" ]; then
+            echo "no HorizonPad.app produced" >&2
+            exit 1
+          fi
+          echo "app: $APP"
+          mkdir -p "$RUNNER_TEMP/ipa/Payload"
+          cp -R "$APP" "$RUNNER_TEMP/ipa/Payload/"
+          # Strip any signature fragments so re-signing tools start from clean
+          # bytes; an unsigned build should not carry a stale _CodeSignature.
+          rm -rf "$RUNNER_TEMP/ipa/Payload/HorizonPad.app/_CodeSignature"
+          cd "$RUNNER_TEMP/ipa"
+          zip -qry "$RUNNER_TEMP/HorizonPad-unsigned.ipa" Payload
+          cd - >/dev/null
+          unzip -l "$RUNNER_TEMP/HorizonPad-unsigned.ipa" | head -n 12
+          shasum -a 256 "$RUNNER_TEMP/HorizonPad-unsigned.ipa" | tee "$RUNNER_TEMP/ipa.sha256"
+          du -h "$RUNNER_TEMP/HorizonPad-unsigned.ipa"
+
+      - name: Report what the IPA needs
+        run: |
+          set -euo pipefail
+          APP="$RUNNER_TEMP/ipa/Payload/HorizonPad.app"
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Info.plist"
+          /usr/libexec/PlistBuddy -c 'Print :MinimumOSVersion' "$APP/Info.plist" 2>/dev/null || echo "MinimumOSVersion: (default)"
+          /usr/libexec/PlistBuddy -c 'Print :UIDeviceFamily' "$APP/Info.plist"
+          echo "architectures:"
+          lipo -info "$APP/HorizonPad"
+          echo "signature state:"
+          codesign -dv "$APP" 2>&1 | head -n 3 || true
+
+      - name: Upload the IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: HorizonPad-unsigned-ipa
+          path: |
+            ${{ runner.temp }}/HorizonPad-unsigned.ipa
+            ${{ runner.temp }}/ipa.sha256
+          if-no-files-found: error
+          retention-days: 30
