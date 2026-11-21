@@ -60,7 +60,10 @@ Minecraft 的可玩性大部分来自数据而不是代码：
 
 ## 5. 对用户的诚实承诺
 
-- 应用**不联网**：`Info.plist` 里没有任何 `NSAppTransportSecurity` 放宽，代码里没有 `URLSession`。
+- 联网只用于**下载游戏版本**（`app/HorizonPad/Engine/VersionDownloader.swift`），走 HTTPS，
+  没有任何自有服务器，也不上传用户的 jar 或世界。`Info.plist` 里不需要
+  `NSAppTransportSecurity` 放宽，因为两个源都是 TLS；iOS 上 `URLSession` 也不需要额外
+  entitlement。导入本地 jar 的路径仍然完全离线。
 - 应用**不上传**：诊断日志只有用户点「导出」才会离开沙盒。
 - 应用**不包含**游戏资源：装完之后什么资源都没有，必须由用户导入自己的 jar。
 - 覆盖度报告会明确写出「还有多少个 Java 类没有对应实现」，不用完成度百分比糊弄。
