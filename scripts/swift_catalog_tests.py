@@ -18,6 +18,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 CATALOG = ROOT / "app/HorizonPad/Engine/MirrorCatalog.swift"
+STORE = ROOT / "app/HorizonPad/Engine/DownloadStore.swift"
 WORK = ROOT / ".build/catalog-tests"
 
 MANIFEST = """
@@ -153,6 +154,40 @@ try archive.write(to: URL(fileURLWithPath: outPath))
 print("  wrote \(outPath) (\(archive.count) bytes)")
 check(CRC32.checksum(Data("123456789".utf8)) == 0xCBF4_3926, "zip: crc32 check value")
 
+// ---- resume planner --------------------------------------------------------
+check(ResumePlanner.decide(cachedSize: 0, expectedSize: 100, serverStatus: 200) == .restart,
+      "resume: nothing cached restarts")
+check(ResumePlanner.decide(cachedSize: 40, expectedSize: 100, serverStatus: 206) == .append(from: 40),
+      "resume: partial plus 206 appends from the offset")
+check(ResumePlanner.decide(cachedSize: 100, expectedSize: 100, serverStatus: 206) == .done,
+      "resume: already complete is done")
+check(ResumePlanner.decide(cachedSize: 40, expectedSize: 100, serverStatus: 200) == .restart,
+      "resume: a server that ignores the range forces a restart")
+check(ResumePlanner.decide(cachedSize: 120, expectedSize: 100, serverStatus: 206) == .restart,
+      "resume: a cache larger than expected restarts")
+check(ResumePlanner.decide(cachedSize: 40, expectedSize: 0, serverStatus: 206) == .append(from: 40),
+      "resume: unknown size still resumes on 206")
+
+// ---- object store ----------------------------------------------------------
+do {
+    let store = DownloadStore(versionID: "26.3 test/id")
+    try store.prepare()
+    check(store.hasObject("deadbeef", expectedSize: 4) == false, "store: absent object")
+    try store.stashObject(Data("abcd".utf8), hash: "deadbeef")
+    check(store.hasObject("deadbeef", expectedSize: 4), "store: stashed object is visible")
+    check(store.countObjects() == 1, "store: one object counted")
+    check(try store.readObject("deadbeef") == Data("abcd".utf8), "store: bytes round-trip")
+    check(store.hasObject("deadbeef", expectedSize: 99) == false,
+          "store: size mismatch counts as absent, so a truncated leftover is refetched")
+    check(store.byteCount >= 4, "store: byte count covers objects")
+    check(DownloadStore.safeName("26.3 test/id") == "26.3_test_id",
+          "store: version id sanitised for the filesystem")
+    try store.clear()
+    check(store.countObjects() == 0, "store: clear empties it")
+} catch {
+    print("  FAIL store threw \(error)"); failures += 1
+}
+
 print(failures == 0 ? "ALL PASSED" : "\(failures) FAILED")
 exit(failures == 0 ? 0 : 1)
 """
@@ -211,7 +246,18 @@ def main() -> int:
 
     exe = WORK / ("catalog-test.exe" if sys.platform == "win32" else "catalog-test")
     build = subprocess.run(
-        [str(swiftc), *sdk_args(swiftc), "-swift-version", "5", "-O", str(CATALOG), str(main_swift), "-o", str(exe)],
+        [
+            str(swiftc),
+            *sdk_args(swiftc),
+            "-swift-version",
+            "5",
+            "-O",
+            str(CATALOG),
+            str(STORE),
+            str(main_swift),
+            "-o",
+            str(exe),
+        ],
         capture_output=True,
         text=True,
         encoding="utf-8",

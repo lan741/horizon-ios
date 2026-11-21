@@ -31,6 +31,7 @@ SDK = {
     "fatalerror", "unsafebitcast", "withunsafebytes",
     "withunsafemutablebufferpointer", "withextendedlifetime", "clamp",
     # Swift concurrency helpers, all spelled as functions in the standard library.
+    "canimport", "targetenvironment", "available", "import",
     "withthrowingtaskgroup", "withtaskgroup", "withcheckedthrowingcontinuation",
     "withcheckedcontinuation",
 }

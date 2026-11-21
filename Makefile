@@ -49,6 +49,7 @@ preflight:
 # 下载链：catalog 断言 + Swift 写出的 zip 能被引擎 unzip/port
 verify-download:
 	python3 scripts/verify-download-chain.py
+	python3 scripts/test-resume.py
 
 check-swift:
 	@python3 scripts/swift_check.py || true

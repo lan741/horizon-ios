@@ -2,25 +2,27 @@
 //  VersionDownloader.swift
 //  HorizonPad
 //
-//  The in-app download path: pick a version, fetch it through a mirror, pack the
-//  result, port it, register it. Networking only — every decision about *what* to
-//  fetch lives in `MirrorCatalog`, which is testable without a network.
+//  Fetch a game version, resumably.
 //
-//  Design notes worth keeping:
+//  The first version started from zero on every attempt: its work directory was
+//  UUID-named and deleted on any error, so a dropped connection at 90% of the
+//  41 MB client jar meant downloading it again. Users noticed ("总是下载中断就要
+//  重新下"), which is the right reaction — that is a design bug, not bad luck.
 //
-//    * The mirror is tried first and the official source is the fallback. A
-//      Chinese network reaches BMCLAPI quickly and Mojang slowly; the reverse
-//      happens on a VPN. Trying both costs one failed request, not a stuck app.
+//  What makes progress survive now:
 //
-//    * Asset objects are content addressed, so a failure is retried per object
-//      and a corrupt download is detected by SHA-1 instead of producing a pack
-//      with a broken texture.
-//
-//    * The client jar is fetched too: `hz-class` reads the Java side to report
-//      coverage, and a pack without it would silently claim 100% coverage.
+//    * one stable directory per version (DownloadStore), never deleted on failure;
+//    * asset objects stored by hash, skipped when already present;
+//    * the client jar fetched with `Range` and appended to a `.part` file, so an
+//      interrupted jar resumes instead of restarting;
+//    * every request retried a few times with backoff, mirror then official,
+//      without discarding what earlier attempts already fetched.
 //
 
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import SwiftUI
 
 @MainActor
@@ -45,6 +47,8 @@ final class VersionDownloader: ObservableObject {
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var versions: [RemoteVersion] = []
     @Published private(set) var manifestLatest: String = ""
+    @Published private(set) var cachedObjects: Int = 0
+    @Published private(set) var cachedBytes: Int = 0
     @Published var mirrorID: String = "bmclapi"
     @Published var selection = AssetSelection()
     @Published var onlyReleases = true
@@ -55,8 +59,8 @@ final class VersionDownloader: ObservableObject {
     init() {
         let config = URLSessionConfiguration.default
         config.waitsForConnectivity = true
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 600
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 3600
         config.httpAdditionalHeaders = ["User-Agent": "HorizonPad"]
         session = URLSession(configuration: config)
     }
@@ -83,18 +87,30 @@ final class VersionDownloader: ObservableObject {
         }
     }
 
+    /// What is already on disk for `version`, so the UI can say "续传" honestly.
+    func refreshCacheInfo(for version: RemoteVersion) {
+        let store = DownloadStore(versionID: version.id)
+        cachedObjects = store.countObjects()
+        cachedBytes = store.byteCount
+    }
+
+    func clearCache(for version: RemoteVersion) {
+        try? DownloadStore(versionID: version.id).clear()
+        cachedObjects = 0
+        cachedBytes = 0
+    }
+
     // MARK: - One download
 
-    /// Fetch, pack and port `version`. Returns the new pack's id.
     @discardableResult
     func download(_ version: RemoteVersion) async -> UUID? {
         guard !phase.isBusy else { return nil }
-        let work = fileManager.temporaryDirectory
-            .appendingPathComponent("hz-download-\(version.id)-\(UUID().uuidString)", isDirectory: true)
+        let store = DownloadStore(versionID: version.id)
         do {
-            try fileManager.createDirectory(at: work, withIntermediateDirectories: true)
+            try store.prepare()
 
-            // 1. version metadata
+            // 1. version metadata (small, not cached: it changes rarely but a
+            //    stale copy would silently pin an old asset index)
             phase = .downloading(step: "版本信息", done: 0, total: 1)
             let metaData = try await getWithFallbackData(version.metadataURL)
             let info = try CatalogDecoder.version(from: metaData)
@@ -108,33 +124,35 @@ final class VersionDownloader: ObservableObject {
                 throw CatalogError.badJSON("asset selection produced no files")
             }
 
-            // 3. client jar, into the pack as-is so the Java side is available
-            phase = .downloading(step: "client.jar", done: 0, total: plan.count + 1)
-            let jarURL = try await getWithFallback(info.clientJarURL)
-            let jarBytes = try Data(contentsOf: jarURL)
-            if info.clientJarSize > 0, jarBytes.count != info.clientJarSize {
-                throw CatalogError.badJSON(
-                    "client.jar 大小不符（\(jarBytes.count)/\(info.clientJarSize)）"
-                )
+            // 3. client jar, resumable: this is the file people noticed
+            phase = .downloading(step: "client.jar（可续传）", done: 0, total: plan.count + 1)
+            try await fetchResumable(
+                upstream: info.clientJarURL,
+                destination: store.objectURL("client.jar"),
+                expectedSize: info.clientJarSize
+            )
+
+            // 4. asset objects, skipping what earlier attempts already stored
+            let missing = plan.filter { !store.hasObject($0.hash, expectedSize: $0.size) }
+            cachedObjects = plan.count - missing.count
+            if !missing.isEmpty {
+                try await fetchObjects(missing, store: store, totalAssets: plan.count)
             }
 
-            // 4. asset objects, a few at a time
-            let objects_dir = work.appendingPathComponent("objects", isDirectory: true)
-            try fileManager.createDirectory(at: objects_dir, withIntermediateDirectories: true)
-            try await fetchObjects(plan, into: objects_dir)
-
-            // 5. pack everything the port needs
+            // 5. pack
             phase = .packing
             var writer = StoreZipWriter()
             for asset in plan {
-                let file = objects_dir.appendingPathComponent(asset.hash)
-                guard let bytes = try? Data(contentsOf: file) else { continue }
+                guard let bytes = try? store.readObject(asset.hash) else { continue }
                 writer.add(path: asset.path, data: bytes)
             }
-            let zipURL = work.appendingPathComponent("pack.zip")
-            try writer.finalize().write(to: zipURL)
+            if let jar = try? store.readObject("client.jar") {
+                // The client jar is not an asset; it rides along for hz-class.
+                writer.add(path: "client.jar", data: jar)
+            }
+            try writer.finalize().write(to: store.packURL, options: .atomic)
 
-            // 6. port on the engine, exactly as a manual import does
+            // 6. port
             phase = .porting
             let id = UUID()
             let packURL = Paths.packURL(for: id)
@@ -143,7 +161,7 @@ final class VersionDownloader: ObservableObject {
                 Engine.queue.async {
                     do {
                         let result = try Porter.port(
-                            jar: zipURL,
+                            jar: store.packURL,
                             pack: packURL,
                             report: reportURL,
                             minecraftVersion: version.id,
@@ -158,10 +176,9 @@ final class VersionDownloader: ObservableObject {
 
             // 7. register
             let report = ImportController.parseReport(outcome.reportJSON)
-            let displayName = "Minecraft \(version.id)"
             let pack = InstalledPack(
                 id: id,
-                displayName: displayName,
+                displayName: "Minecraft \(version.id)",
                 minecraftVersion: version.id,
                 engineAPI: Int(Engine.apiVersion),
                 packBytes: outcome.pack.bytes,
@@ -173,89 +190,197 @@ final class VersionDownloader: ObservableObject {
                 jvmSummary: report.jvm
             )
             Library.shared.add(pack)
+            store.removeIntermediate()
             phase = .done(id)
-            try? fileManager.removeItem(at: work)
             return id
         } catch {
-            phase = .failed(describe(error))
-            try? fileManager.removeItem(at: work)
+            // Deliberately keep the store: it *is* the progress.
+            let kept = store.countObjects()
+            let suffix = kept > 0 ? "（已保留 \(kept) 个文件，重新开始会续传）" : ""
+            phase = .failed(describe(error) + suffix)
             return nil
         }
     }
 
     // MARK: - Networking
 
-    private func fetchObjects(_ plan: [SelectedAsset], into directory: URL) async throws {
-        let total = plan.count
-        var completed = 0
-        let limit = 8
+    private func fetchObjects(_ plan: [SelectedAsset], store: DownloadStore, totalAssets: Int) async throws {
+        var completed = totalAssets - plan.count
+        let limit = 6
 
         try await withThrowingTaskGroup(of: Void.self) { group in
             var iterator = plan.makeIterator()
             var inFlight = 0
+            var firstError: Error?
 
-            func addNext() throws {
+            func addNext() {
                 guard let asset = iterator.next() else { return }
                 inFlight += 1
                 group.addTask { [weak self] in
                     guard let self else { return }
-                    let bytes = try await self.getWithFallback(
-                        ObjectURL.forHash(asset.hash, mirror: self.mirror)
-                    )
-                    let data = try Data(contentsOf: bytes)
-                    let digest = InsecureSHA1.hex(data)
-                    guard digest == asset.hash else {
-                        throw CatalogError.badJSON("资源校验失败 \(asset.objectPath)")
-                    }
-                    try data.write(to: directory.appendingPathComponent(asset.hash))
+                    let data = try await self.getObject(asset)
+                    try store.stashObject(data, hash: asset.hash)
                 }
             }
 
-            for _ in 0..<limit { try addNext() }
+            for _ in 0..<limit { addNext() }
 
             while inFlight > 0 {
-                try await group.next()
+                do {
+                    try await group.next()
+                } catch {
+                    // One bad object must not throw away the others' progress;
+                    // remember it and keep draining the group.
+                    if firstError == nil { firstError = error }
+                }
                 inFlight -= 1
                 completed += 1
-                phase = .downloading(step: "资源", done: completed, total: total)
-                try addNext()
+                phase = .downloading(step: "资源", done: completed, total: totalAssets)
+                addNext()
+            }
+
+            if let firstError { throw firstError }
+        }
+    }
+
+    /// Fetch one object, verifying its hash. Retries are handled by
+    /// `getWithFallback`; a hash mismatch is treated as a corrupt transfer and
+    /// retried once more.
+    private func getObject(_ asset: SelectedAsset) async throws -> Data {
+        for attempt in 1...3 {
+            let data = try await getWithFallbackData(
+                ObjectURL.forHash(asset.hash, mirror: mirror)
+            )
+            if InsecureSHA1.hex(data) == asset.hash {
+                return data
+            }
+            if attempt == 3 {
+                throw CatalogError.badJSON("资源校验失败 \(asset.objectPath)")
+            }
+            try await Task.sleep(nanoseconds: UInt64(attempt) * 400_000_000)
+        }
+        throw CatalogError.badJSON("资源校验失败 \(asset.objectPath)")
+    }
+
+    /// Download with `Range` resume.
+    ///
+    /// The `.part` file is appended to in place: an interrupted transfer leaves a
+    /// prefix on disk and the next attempt asks only for what is missing.
+    ///
+    /// A complete `.part` is *moved into place*, not reported as done: "the bytes
+    /// are on disk" and "the file exists at its destination" are different facts,
+    /// and conflating them left a finished download sitting in a `.part` file.
+    private func fetchResumable(upstream: URL, destination: URL, expectedSize: Int) async throws {
+        let part = destination.appendingPathExtension("part")
+
+        func size(of url: URL) -> Int {
+            (try? fileManager.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+        }
+
+        func finalize() throws {
+            if fileManager.fileExists(atPath: destination.path) {
+                try? fileManager.removeItem(at: destination)
+            }
+            try fileManager.moveItem(at: part, to: destination)
+        }
+
+        if expectedSize > 0, size(of: destination) == expectedSize { return }
+        if expectedSize > 0, size(of: part) == expectedSize {
+            try finalize()
+            return
+        }
+
+        let candidates = candidateURLs(upstream)
+        var lastError: Error?
+
+        for url in candidates {
+            var offset = size(of: part)
+            for attempt in 1...4 {
+                if expectedSize > 0, offset == expectedSize {
+                    try finalize()
+                    return
+                }
+                var request = URLRequest(url: url)
+                if offset > 0 {
+                    request.setValue("bytes=\(offset)-", forHTTPHeaderField: "Range")
+                }
+                do {
+                    let (bytes, response) = try await session.data(for: request)
+                    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+                    switch ResumePlanner.decide(
+                        cachedSize: offset,
+                        expectedSize: expectedSize,
+                        serverStatus: status
+                    ) {
+                    case .done:
+                        try finalize()
+                        return
+                    case .restart:
+                        try? fileManager.removeItem(at: part)
+                        try bytes.write(to: part, options: .atomic)
+                    case .append:
+                        let handle = try FileHandle(forWritingTo: part)
+                        try handle.seekToEnd()
+                        try handle.write(contentsOf: bytes)
+                        try handle.close()
+                    }
+
+                    let written = size(of: part)
+                    if expectedSize > 0, written == expectedSize {
+                        try finalize()
+                        return
+                    }
+                    if expectedSize == 0 { break }
+                    offset = written
+                    if attempt == 4 {
+                        throw CatalogError.badJSON(
+                            "jar 下载不完整（\(written)/\(expectedSize)），下次会续传"
+                        )
+                    }
+                    try await Task.sleep(nanoseconds: UInt64(attempt) * 500_000_000)
+                } catch {
+                    lastError = error
+                    if attempt == 4 { break }
+                    try await Task.sleep(nanoseconds: UInt64(attempt) * 700_000_000)
+                    offset = size(of: part)
+                }
             }
         }
+        throw lastError ?? URLError(.cannotLoadFromNetwork)
+    }
+
+    private func candidateURLs(_ upstream: URL) -> [URL] {
+        let mirrored = mirror.rewrite(upstream)
+        return mirrored == upstream ? [upstream] : [mirrored, upstream]
     }
 
     private func get(_ url: URL) async throws -> Data {
-        var request = URLRequest(url: url)
-        request.timeoutInterval = 30
-        let (data, response) = try await session.data(for: request)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw URLError(.badServerResponse)
-        }
-        return data
-    }
-
-    /// Tries the selected mirror, then the official source, then fails.
-    private func getWithFallback(_ upstream: URL) async throws -> URL {
-        let mirrorURL = mirror.rewrite(upstream)
-        var candidates = [mirrorURL]
-        if mirrorURL != upstream { candidates.append(upstream) }
-
         var lastError: Error?
-        for candidate in candidates {
+        for attempt in 1...3 {
             do {
-                let data = try await get(candidate)
-                let saved = fileManager.temporaryDirectory
-                    .appendingPathComponent(UUID().uuidString)
-                try data.write(to: saved)
-                return saved
+                let (data, response) = try await session.data(for: URLRequest(url: url))
+                if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+                    throw URLError(.badServerResponse)
+                }
+                return data
             } catch {
                 lastError = error
+                try await Task.sleep(nanoseconds: UInt64(attempt) * 400_000_000)
             }
         }
         throw lastError ?? URLError(.cannotLoadFromNetwork)
     }
 
     private func getWithFallbackData(_ upstream: URL) async throws -> Data {
-        try Data(contentsOf: try await getWithFallback(upstream))
+        var lastError: Error?
+        for candidate in candidateURLs(upstream) {
+            do {
+                return try await get(candidate)
+            } catch {
+                lastError = error
+            }
+        }
+        throw lastError ?? URLError(.cannotLoadFromNetwork)
     }
 
     private func describe(_ error: Error) -> String {
