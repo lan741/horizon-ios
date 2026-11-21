@@ -80,15 +80,21 @@ Write-Host "jar: $jar ($((Get-Item $jar).Length) bytes)"
 # --- 1. inflate check --------------------------------------------------------
 & $hz unzip $jar (Join-Path $work 'unzipped') 2>&1 | Out-Host
 $bad = 0
-# On a CI runner `$env:TEMP` is a short 8.3 path (C:\Users\RUNNER~1\...), while
-# Get-ChildItem returns the long form. String math on the two would compare
-# different prefixes, so resolve once and trust the resolved path.
-$srcFull = (Resolve-Path $src).Path
-foreach ($f in (Get-ChildItem $src -Recurse -File)) {
-    $rel = $f.FullName.Substring($srcFull.Length).TrimStart('\', '/')
+# `$env:TEMP` can be an 8.3 short path on a runner while Get-ChildItem returns the
+# long form, so any prefix arithmetic on the two disagrees. Entering the directory
+# first makes both sides use the same base.
+Push-Location $src
+try {
+    $entries = Get-ChildItem -Recurse -File | ForEach-Object {
+        $_.FullName.Substring((Get-Location).Path.Length).TrimStart('\', '/')
+    }
+} finally {
+    Pop-Location
+}
+foreach ($rel in $entries) {
     $got = Join-Path $work "unzipped\$rel"
     if (-not (Test-Path $got)) { Write-Warning "missing $rel"; $bad++; continue }
-    $a = (Get-FileHash $f.FullName -Algorithm SHA256).Hash
+    $a = (Get-FileHash (Join-Path $src $rel) -Algorithm SHA256).Hash
     $b = (Get-FileHash $got -Algorithm SHA256).Hash
     if ($a -ne $b) { Write-Warning "hash mismatch $rel"; $bad++ }
 }
