@@ -5,17 +5,17 @@
 #   cd app && xcodegen generate
 #   open HorizonPad.xcodeproj
 #
-# Deployment target is iPadOS 27.0; the app is universal (iPad + iPhone) but
+# The app is universal (iPad + iPhone) and targets iPadOS 27.0+; but
 # laid out for iPad.
 name: HorizonPad
 options:
   bundleIdPrefix: dev.playhorizon.pad
-  # Minimum OS the app runs on. Deliberately not "27.0": a deployment target above
-  # the build host's SDK makes xcodebuild fall back to "My Mac (Designed for
-  # iPad)" and fail. The app still runs on iPadOS 27.2 — that is the *maximum*
-  # version, not a requirement.
+  # Minimum OS the app runs on: iPadOS 27.0. Kept in step with
+  # IPHONEOS_DEPLOYMENT_TARGET below, which is what Xcode actually bakes into the
+  # binary and the Info.plist. The two disagreed once (17.0 here, 27.0 there) and
+  # the built IPA reported 27.0, so there is exactly one value now.
   deploymentTarget:
-    iOS: "17.0"
+    iOS: "27.0"
   createIntermediateGroups: true
   groupSortPosition: top
 
