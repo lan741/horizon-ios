@@ -2,7 +2,10 @@ name: CI
 
 on:
   push:
-    branches: [main]
+    # horizonpad-engine is the integration branch this project is developed on;
+    # listing it here means a push there runs CI without touching the default
+    # branch (workflow_dispatch can only target workflows on the default branch).
+    branches: [main, horizonpad-engine]
   pull_request:
   workflow_dispatch:
 
