@@ -83,18 +83,30 @@ step "typecheck Foundation + hz_ffi" \
     "$APP/HorizonPad/Support/Paths.swift" \
     "$APP/HorizonPad/Engine/HZEngine.swift"
 
-# 3. model layer against the Combine shim -------------------------------------
-mkdir -p "$BUILD"
-if swiftc -emit-module -module-name Combine -swift-version 5 ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} \
-    -emit-module-path "$BUILD/Combine.swiftmodule" "$SHIM"; then
-  step "typecheck model layer + Combine shim" \
-    swiftc -typecheck -swift-version 5 ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} -I "$BUILD" \
+# 3. model layer ---------------------------------------------------------------
+# On Apple hosts the real Combine framework exists, so the model layer is checked
+# against it directly. Building the shim here would fail: a local module named
+# `Combine` that imports `Foundation` is a circular dependency on macOS.
+# The shim exists only for hosts without an Apple SDK (Windows, Linux).
+if [ "$(uname -s)" = "Darwin" ]; then
+  step "typecheck model layer (real Combine)" \
+    swiftc -typecheck -swift-version 5 ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} \
       "$APP/HorizonPad/Support/Paths.swift" \
       "$APP/HorizonPad/Model/Library.swift" \
       "$APP/HorizonPad/Model/Settings.swift"
 else
-  echo "FAILED: build Combine shim" >&2
-  FAILED=1
+  mkdir -p "$BUILD"
+  if swiftc -emit-module -module-name Combine -swift-version 5 ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} \
+      -emit-module-path "$BUILD/Combine.swiftmodule" "$SHIM"; then
+    step "typecheck model layer + Combine shim" \
+      swiftc -typecheck -swift-version 5 ${SDK_ARGS[@]+"${SDK_ARGS[@]}"} -I "$BUILD" \
+        "$APP/HorizonPad/Support/Paths.swift" \
+        "$APP/HorizonPad/Model/Library.swift" \
+        "$APP/HorizonPad/Model/Settings.swift"
+  else
+    echo "FAILED: build Combine shim" >&2
+    FAILED=1
+  fi
 fi
 
 echo
