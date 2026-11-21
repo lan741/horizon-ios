@@ -13,7 +13,7 @@ struct ImportView: View {
 
     var body: some View {
         Form {
-            Section("选择文件") {
+            Section(header: Text("选择文件")) {
                 Button {
                     showPicker = true
                 } label: {
@@ -33,7 +33,7 @@ struct ImportView: View {
             }
 
             if case .porting = controller.phase {
-                Section("进度") {
+                Section(header: Text("进度")) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(controller.progress.label).font(.callout)
                         ProgressView(value: controller.progress.fraction)

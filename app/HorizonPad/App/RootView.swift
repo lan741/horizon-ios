@@ -43,7 +43,7 @@ private struct Sidebar: View {
 
     var body: some View {
         List {
-            Section("Horizon") {
+            Section(header: Text("Horizon")) {
                 Label("资源包", systemImage: "shippingbox")
                     .badge(library.packs.count)
                 Button {
@@ -52,7 +52,7 @@ private struct Sidebar: View {
                     Label("导入 Minecraft jar", systemImage: "square.and.arrow.down")
                 }
             }
-            Section("最近") {
+            Section(header: Text("最近")) {
                 if library.packs.isEmpty {
                     Text("还没有导入任何资源包")
                         .font(.callout)

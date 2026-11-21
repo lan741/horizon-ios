@@ -28,13 +28,13 @@ struct DiagnosticsView: View {
 
     var body: some View {
         Form {
-            Section("环境") {
+            Section(header: Text("环境")) {
                 ForEach(EnvRow.rows(from: model.environment())) { row in
                     LabeledContent(row.key, value: row.value)
                 }
             }
 
-            Section("资源包") {
+            Section(header: Text("资源包")) {
                 if library.packs.isEmpty {
                     Text("无").foregroundStyle(.secondary)
                 }
@@ -69,7 +69,7 @@ struct DiagnosticsView: View {
                 Text("日志只保存在本机，导出由你决定。")
             }
 
-            Section("日志") {
+            Section(header: Text("日志")) {
                 ForEach(log.lines.suffix(120)) { line in
                     Text(line.text)
                         .font(.caption2.monospaced())

@@ -57,7 +57,7 @@ struct PackDetailView: View {
                 .disabled(!pack.installed)
             }
 
-            Section("资源包") {
+            Section(header: Text("资源包")) {
                 LabeledContent("Minecraft 版本", value: pack.minecraftVersion)
                 LabeledContent("引擎 ABI", value: "\(pack.engineAPI)")
                 LabeledContent("条目", value: "\(pack.entryCount)")
@@ -66,14 +66,14 @@ struct PackDetailView: View {
                 LabeledContent("manifest", value: String(pack.manifestSHA256.prefix(16)) + "…")
             }
 
-            Section("条目构成") {
+            Section(header: Text("条目构成")) {
                 ForEach(KindRow.rows(from: pack.kinds)) { row in
                     LabeledContent(row.kind, value: "\(row.count)")
                 }
             }
 
             if let jvm = pack.jvmSummary {
-                Section("仍是 Java 的部分") {
+                Section(header: Text("仍是 Java 的部分")) {
                     LabeledContent("类", value: "\(jvm.classes)")
                     LabeledContent("方法", value: "\(jvm.methods)")
                     LabeledContent("字节码", value: ByteCountFormatter.string(fromByteCount: Int64(jvm.bytecodeBytes), countStyle: .file))
@@ -100,7 +100,7 @@ struct PackDetailView: View {
             if let session = model.session, session.handle != nil {
                 let packs = session.handle?.shaderPacks ?? []
                 if !packs.isEmpty {
-                    Section("着色器包") {
+                    Section(header: Text("着色器包")) {
                         ForEach(packs) { pack in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(pack.id)
@@ -120,7 +120,7 @@ struct PackDetailView: View {
                 }
             }
 
-            Section("世界") {
+            Section(header: Text("世界")) {
                 let worlds = library.worlds(for: pack.id)
                 if worlds.isEmpty {
                     Text("还没有存档").foregroundStyle(.secondary)
