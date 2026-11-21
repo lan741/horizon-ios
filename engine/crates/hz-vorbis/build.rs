@@ -171,17 +171,26 @@ struct Tool {
 
 fn find_cc(target: &str) -> Option<Tool> {
     let mut target_flags = Vec::new();
-    if target.starts_with("aarch64-apple-ios") {
+    // The simulator check must come first: `aarch64-apple-ios-sim` also starts
+    // with `aarch64-apple-ios`, and compiling the C file against the device SDK
+    // makes the later link fail with "building for iOS, but linking in object
+    // file built for iOS Simulator".
+    if target == "aarch64-apple-ios-sim" || target == "x86_64-apple-ios" {
+        let arch = if target.starts_with("x86_64") {
+            "x86_64-apple-ios-simulator"
+        } else {
+            "arm64-apple-ios-simulator"
+        };
         target_flags.push("-target".to_string());
-        target_flags.push("arm64-apple-ios".to_string());
-        if let Some(sdk) = xcrun("iphoneos") {
+        target_flags.push(arch.to_string());
+        if let Some(sdk) = xcrun("iphonesimulator") {
             target_flags.push("-isysroot".to_string());
             target_flags.push(sdk);
         }
-    } else if target.starts_with("aarch64-apple-ios-sim") {
+    } else if target.starts_with("aarch64-apple-ios") {
         target_flags.push("-target".to_string());
-        target_flags.push("arm64-apple-ios-simulator".to_string());
-        if let Some(sdk) = xcrun("iphonesimulator") {
+        target_flags.push("arm64-apple-ios".to_string());
+        if let Some(sdk) = xcrun("iphoneos") {
             target_flags.push("-isysroot".to_string());
             target_flags.push(sdk);
         }
