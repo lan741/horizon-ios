@@ -100,7 +100,7 @@ struct PackDetailView: View {
             if let session = model.session, session.handle != nil {
                 let packs = session.handle?.shaderPacks ?? []
                 if !packs.isEmpty {
-                    Section(header: Text("着色器包")) {
+                    Section {
                         ForEach(packs) { pack in
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(pack.id)
@@ -114,6 +114,8 @@ struct PackDetailView: View {
                                 }
                             }
                         }
+                    } header: {
+                        Text("着色器包")
                     } footer: {
                         Text("渲染器尚未执行自定义着色器；这里列出包声明的接口与缺口（docs/SHADERS.md）。")
                     }
