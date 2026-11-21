@@ -78,3 +78,15 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: dev.playhorizon.pad.tests
         GENERATE_INFOPLIST_FILE: YES
+        # The test bundle imports the app's bridging header, so it needs the same
+        # include and library search paths; without them the device build failed
+        # with "'hz_ffi.h' file not found".
+        HEADER_SEARCH_PATHS:
+          - $(SRCROOT)/../engine/include
+        LIBRARY_SEARCH_PATHS[sdk=iphoneos*]:
+          - $(SRCROOT)/../engine/target/ios
+        LIBRARY_SEARCH_PATHS[sdk=iphonesimulator*]:
+          - $(SRCROOT)/../engine/target/ios-sim
+        OTHER_LDFLAGS:
+          - -lhz_ffi
+          - -lc++
