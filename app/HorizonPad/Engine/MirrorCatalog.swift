@@ -319,10 +319,25 @@ struct StoreZipWriter {
     init(date: Date = Date(timeIntervalSince1970: 1_700_000_000)) {
         var calendar = Calendar(identifier: .gregorian)
         calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        let parts = calendar.dateComponents([.year, .month, .day, .hour, .minute, .second], from: date)
-        let year = max(1980, parts.year ?? 2023) - 1980
-        dosTime = UInt16((parts.hour ?? 0) << 11 | (parts.minute ?? 0) << 5 | (parts.second ?? 0) / 2)
-        dosDate = UInt16(year << 9 | (parts.month ?? 1) << 5 | (parts.day ?? 1))
+        let parts = calendar.dateComponents(
+            [.year, .month, .day, .hour, .minute, .second],
+            from: date
+        )
+        // Written out with explicit Int locals: the one-liner form made the type
+        // checker give up ("unable to type-check this expression in reasonable
+        // time") because of the optional coalescing inside arithmetic.
+        let rawYear: Int = parts.year ?? 2023
+        let year: Int = Swift.max(1980, rawYear) - 1980
+        let month: Int = parts.month ?? 1
+        let day: Int = parts.day ?? 1
+        let hour: Int = parts.hour ?? 0
+        let minute: Int = parts.minute ?? 0
+        let second: Int = parts.second ?? 0
+
+        let timeBits: Int = (hour << 11) | (minute << 5) | (second / 2)
+        let dateBits: Int = (year << 9) | (month << 5) | day
+        dosTime = UInt16(timeBits)
+        dosDate = UInt16(dateBits)
     }
 
     mutating func add(path: String, data: Data) {
