@@ -139,8 +139,8 @@ CI 里这一步跑在 `ubuntu-latest` 上，先于 macOS 构建，失败得快�
 
 | 工作流 | 触发 | 产出 |
 |---|---|---|
-| `.github/workflows/ci.yml` | push / PR / 手动 | 三平台引擎测试、ZIP 往返、Swift 结构检查、**iOS 模拟器构建 + 测试 + Metal 编译** |
-| `.github/workflows/release.yml` | 手动 / `v*` 标签 | 未签名的模拟器 `.app`（zip）+ `SHA256SUMS` |
+| `.github/workflows/horizonpad-ci.yml` | push / PR / 手动 | 三平台引擎测试、ZIP 往返、Swift 结构检查、**iOS 模拟器构建 + 测试 + Metal 编译** |
+| `.github/workflows/horizonpad-release.yml` | 手动 / `v*` 标签 | 未签名的模拟器 `.app`（zip）+ `SHA256SUMS` |
 
 ### 上云前的自检
 
