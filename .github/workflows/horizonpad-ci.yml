@@ -199,20 +199,27 @@ jobs:
             | tee "$RUNNER_TEMP/tests.log"
           tail -n 30 "$RUNNER_TEMP/tests.log"
 
-      - name: Run the tests if an iOS runtime is installed
+      # This image has no iOS simulator runtime, only visionOS ones. Running the
+      # tests needs one; compiling them does not, and that already happened. The
+      # guard has to be the selector itself rather than a grep on the runtime
+      # list, which matched the visionOS entries.
+      - name: Run the tests if an iOS simulator exists
         run: |
           set -euo pipefail
-          if ! xcrun simctl list runtimes | grep -q 'iOS '; then
-            echo "no iOS simulator runtime on this image; the test bundle was still compiled"
+          if ! xcrun simctl list devices available -j > "$RUNNER_TEMP/sims.json" 2>/dev/null; then
+            echo "no simulator devices on this image; the test bundle was still compiled"
             exit 0
           fi
-          xcrun simctl list devices available -j > "$RUNNER_TEMP/sims.json"
-          UDID=$(python3 scripts/pick_simulator.py "$RUNNER_TEMP/sims.json")
+          if ! UDID=$(python3 scripts/pick_simulator.py "$RUNNER_TEMP/sims.json"); then
+            echo "no iPhone simulator in an iOS runtime; the test bundle was still compiled"
+            exit 0
+          fi
           xcodebuild test \
             -project app/HorizonPad.xcodeproj \
             -scheme HorizonPad \
             -destination "platform=iOS Simulator,id=$UDID" \
             -derivedDataPath "$RUNNER_TEMP/dd-tests" \
+            ARCHS=arm64 \
             CODE_SIGNING_ALLOWED=NO
 
       # The two things only a real Metal compiler can prove.
