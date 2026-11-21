@@ -10,6 +10,7 @@
 import XCTest
 @testable import HorizonPad
 
+@MainActor
 final class EngineABITests: XCTestCase {
     func testAPIVersionMatchesHeader() {
         XCTAssertEqual(Engine.apiVersion, UInt32(HZ_API_VERSION))
@@ -23,6 +24,7 @@ final class EngineABITests: XCTestCase {
     }
 }
 
+@MainActor
 final class ReportParsingTests: XCTestCase {
     func testParsesCoverageAndJVM() throws {
         let json = """
@@ -47,6 +49,7 @@ final class ReportParsingTests: XCTestCase {
     }
 }
 
+@MainActor
 final class ProgressTests: XCTestCase {
     func testFractionIsMonotonicAcrossStages() {
         var previous = -1.0
@@ -66,6 +69,7 @@ final class ProgressTests: XCTestCase {
     }
 }
 
+@MainActor
 final class RayHitTests: XCTestCase {
     func testAdjacentFollowsTheNormal() {
         let down = GameHandle.RayHit(block: SIMD3(4, 7, -2),
@@ -92,6 +96,7 @@ final class RayHitTests: XCTestCase {
     }
 }
 
+@MainActor
 final class PathTests: XCTestCase {
     func testContainerDirectoriesExist() {
         XCTAssertTrue(FileManager.default.fileExists(atPath: Paths.root.path))
