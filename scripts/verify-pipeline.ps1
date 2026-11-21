@@ -80,8 +80,12 @@ Write-Host "jar: $jar ($((Get-Item $jar).Length) bytes)"
 # --- 1. inflate check --------------------------------------------------------
 & $hz unzip $jar (Join-Path $work 'unzipped') 2>&1 | Out-Host
 $bad = 0
+# On a CI runner `$env:TEMP` is a short 8.3 path (C:\Users\RUNNER~1\...), while
+# Get-ChildItem returns the long form. String math on the two would compare
+# different prefixes, so resolve once and trust the resolved path.
+$srcFull = (Resolve-Path $src).Path
 foreach ($f in (Get-ChildItem $src -Recurse -File)) {
-    $rel = $f.FullName.Substring($src.Length + 1)
+    $rel = $f.FullName.Substring($srcFull.Length).TrimStart('\', '/')
     $got = Join-Path $work "unzipped\$rel"
     if (-not (Test-Path $got)) { Write-Warning "missing $rel"; $bad++; continue }
     $a = (Get-FileHash $f.FullName -Algorithm SHA256).Hash
